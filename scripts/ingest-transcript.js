@@ -562,7 +562,7 @@ const inFlightExchange = (!deferredLast && lastInFlight) ? lastExchange : null;
 //
 // This runs in the EXTRACTOR, not in lib/secrets.js redact(). redact() is shared
 // and applies at OUTPUT time to both corpora, so putting it there would strip
-// addresses out of hand-written memories too -- deal-reg contacts, Daniel's own
+// addresses out of hand-written memories too -- customer contacts, the author's own
 // identity. Scope it to what auto-capture writes.
 //
 // The rule is shaped by what the domain is worth, not by uniform paranoia:

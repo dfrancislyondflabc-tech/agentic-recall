@@ -147,7 +147,7 @@ writeFileSync(join(staged, 'READ-ME-FIRST.txt'),
    '  not travel without carrying the credentials with it. This is a snapshot.',
    '',
    'THE SOFTWARE',
-   '  github.com/<your account>/recall-mcp — the server is already off-machine.',
+   '  github.com/<your account>/agentic-recall — the server is already off-machine.',
    '  These files were the only part that was not.',
    ''].join('\n'));
 

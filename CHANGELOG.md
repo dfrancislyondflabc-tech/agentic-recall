@@ -1335,12 +1335,12 @@ Notable behaviour, since there is no earlier entry to diff against:
 - **Windows correctness**: UTF-8 BOMs and CRLF line endings in frontmatter and bodies are handled.
 - **Every query is logged locally** for measurement (`MEMORY_QUERY_LOG`, `0` disables).
 
-[1.5.0]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.5.0
-[1.4.2]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.4.2
-[1.4.1]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.4.1
-[1.4.0]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.4.0
-[1.3.1]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.3.1
-[1.3.0]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.3.0
-[1.2.1]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.2.1
-[1.2.0]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.2.0
-[1.1.0]: https://github.com/dfrancislyondflabc-tech/recall-mcp/releases/tag/v1.1.0
+[1.5.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.5.0
+[1.4.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.4.2
+[1.4.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.4.1
+[1.4.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.4.0
+[1.3.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.3.1
+[1.3.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.3.0
+[1.2.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.2.1
+[1.2.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.2.0
+[1.1.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.1.0

@@ -200,7 +200,7 @@ Fusing two retrievers only works if both scores mean the same thing on every
 query. A per-query-max normalisation does not: it hands 1.0 to whatever scored
 best, so on a paraphrase where nothing really matched, an accidental match still
 carried half the fused score. (A question about which zip packages to maintain
-returned `monday-quote-create-download` at #1 on the token *download* alone.)
+returned an unrelated note about a download link at #1, on the token *download* alone.)
 
 So the keyword leg is scored against measured reference points instead — a raw
 noise floor, the score a genuine lexical match earns, and the share of the
@@ -228,8 +228,8 @@ zips also shipped a `dist/` install guide that said the opposite; it is gone.)
 From source:
 
 ```bash
-git clone https://github.com/dfrancislyondflabc-tech/recall-mcp.git
-cd recall-mcp
+git clone https://github.com/dfrancislyondflabc-tech/agentic-recall.git
+cd agentic-recall
 npm install
 ```
 
@@ -1341,7 +1341,7 @@ directory of files.
   "mcpServers": {
     "memory": {
       "command": "node",
-      "args": ["/absolute/path/to/recall-mcp/index.js"]
+      "args": ["/absolute/path/to/agentic-recall/index.js"]
     }
   }
 }
@@ -1370,7 +1370,7 @@ discarded one.
 
 ### Claude Code
 ```bash
-claude mcp add memory --scope user -- node /absolute/path/to/recall-mcp/index.js
+claude mcp add memory --scope user -- node /absolute/path/to/agentic-recall/index.js
 ```
 Existing Claude Code sessions pick it up on the **next** session, not the
 current one.
