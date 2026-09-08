@@ -21,7 +21,7 @@ not contain what you asked for.
 
 ```bash
 git clone https://github.com/dfrancislyondflabc-tech/agentic-recall.git
-cd agentic-recall && npm install && npm test    # 89+ checks, no corpus of your own needed
+cd agentic-recall && npm install && npm test    # 275 checks, no corpus of your own needed
 ```
 
 Requires **Node 20 or 22**. Nothing else — the embedding model downloads on first index
@@ -49,6 +49,38 @@ This server separates those two cases and says which one you got:
 Nothing was invented, nothing was silently ranked into first place, and the nearest thing is
 offered as a candidate rather than as an answer. Everything below is about how that verdict is
 reached and how it is measured.
+
+## The same refusal, applied to engineering claims
+
+A memory saying *"I fixed that in `abc123`"* is a sentence. Classifying sentences has failed here
+three times — a correction vocabulary that fired on 76% of exchanges, an unresolved-statement
+vocabulary that fired on 24%. But a SHA is not a sentence to classify. It either exists or it does
+not.
+
+Point `MEMORY_GIT_REPOS` at your repositories and every hex-shaped token in a retrieved memory is
+looked up. Four commands, and only what they prove:
+
+| command | what it establishes |
+|---|---|
+| `cat-file` | the token is a **real commit**, not something SHA-shaped |
+| `merge-base` | it **landed on the mainline**, rather than an abandoned branch |
+| `log` | its **date, author, subject**, and how many files it touched |
+| `rev-list` | how many commits have landed **since the newest memory was written** |
+
+Measured over 2,319 ingested exchanges: 707 SHA-shaped candidates collapsed to **355 real commits**.
+Half of what looks like a commit isn't one, which is why every token is checked rather than trusted
+for its shape.
+
+**What this does not tell you, deliberately.** It does not check whether the change was later
+reverted, or whether the thing still exists at `HEAD`. A commit that landed and was undone the next
+day still reports as landed. So this is not a claim that the memory is *currently* true — it is a
+verified fact about the past, plus `rev-list` telling you exactly how much has happened since that
+nothing in the corpus can know about. The gap is measured rather than closed, which is the same
+discipline as the absence verdict above: never imply knowledge you do not have.
+
+Repos are configured, never inferred — an earlier draft counted commits "in this repo", meaning
+wherever the process happened to be running, which is a different repository from the one the
+memories are about.
 
 ---
 

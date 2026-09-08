@@ -57,7 +57,7 @@ jobs:
       # against the author's own memories and therefore dies on a bare runner at "No index".
       # That mismatch left CI red on 15 of 17 runs -- a permanently failing CI teaches everyone
       # to ignore it, which costs more than having none. Naming the scripts makes both repos run
-      # the same 89 checks. The author's suite stays a local gate, because it cannot be anything
+      # the same 275 checks. The author's suite stays a local gate, because it cannot be anything
       # else.
       - run: node scripts/verify-stdio.js
         env:
