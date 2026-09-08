@@ -1,0 +1,54 @@
+name: Bug report
+description: Something behaves differently from what the README says
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The fields below are the ones that usually decide
+        whether a problem can be reproduced — filling them in saves a round trip.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+      placeholder: |
+        I ran memory({action:"search", query:"..."}) and got ...
+        I expected ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A corpus of two or three small markdown files that shows it is worth more than a long description.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "From package.json, or the `serverVersion` field on any response."
+      placeholder: "1.2.0"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS and Node version
+      placeholder: "macOS 15.6 / Node 22.21.0"
+    validations:
+      required: true
+  - type: input
+    id: corpus
+    attributes:
+      label: Roughly how large is your corpus?
+      description: Document count and total size. Several behaviours depend on scale.
+      placeholder: "about 400 files, 2 MB"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: |
+        Server lines start with `[MEMORY-MCP`. **Please redact anything private** — this is a
+        public issue tracker, and memory corpora tend to contain real work.
+      render: text

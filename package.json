@@ -1,0 +1,54 @@
+{
+  "name": "agentic-recall",
+  "version": "1.7.5",
+  "type": "module",
+  "description": "Long-term memory for agentic tasks. It tells you when it doesn't know.",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "start": "node index.js",
+    "index": "node scripts/build-index.js",
+    "verify": "node scripts/verify-stdio.js",
+    "measure-keyword-scale": "node scripts/measure-keyword-scale.js",
+    "analyse-queries": "node scripts/analyse-query-log.js",
+    "commit-memories": "node scripts/commit-memories.js --verbose",
+    "memories-status": "node scripts/commit-memories.js --status",
+    "check:release": "node scripts/check-release-clean.mjs",
+    "capture": "node scripts/timed-capture.mjs",
+    "release:capture": "zsh scripts/release-capture.sh",
+    "install:capture-hooks": "zsh scripts/install-capture-hooks.sh",
+    "audit:store": "node scripts/audit-store.mjs",
+    "audit:windows-hide": "node scripts/audit-child-windows-hide.mjs",
+    "snapshot:ranking": "node scripts/ranking-snapshot.mjs",
+    "migrate:names": "node scripts/migrate-stable-names.mjs",
+    "test:full": "node test/public/run-public-tests.js",
+    "test:fuzz": "node test/public/fuzz-tool-surface.mjs",
+    "test": "node scripts/verify-stdio.js && node test/public/run-public-tests.js",
+    "test:stdio": "node scripts/verify-stdio.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.22.0",
+    "@xenova/transformers": "^2.17.2"
+  },
+  "license": "MIT",
+  "author": "Daniel Francis-Lyon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dfrancislyondflabc-tech/agentic-recall.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dfrancislyondflabc-tech/agentic-recall/issues"
+  },
+  "homepage": "https://github.com/dfrancislyondflabc-tech/agentic-recall#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "memory",
+    "retrieval",
+    "bm25",
+    "embeddings",
+    "hybrid-search",
+    "claude"
+  ]
+}

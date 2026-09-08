@@ -1,0 +1,111 @@
+name: CI
+
+# What this proves, and what it does not.
+#
+# CI runs two scripts, 149 checks in total, both against the SHIPPED tree:
+#
+#   scripts/verify-stdio.js          30 — starts the real server over stdio and drives it as a client
+#                                         does: tools listed, a search, a get, an absence, malformed
+#                                         input, and the server surviving each.
+#   test/public/run-public-tests.js 119 — contracts over committed fixtures: retrieval, word-order
+#                                         discrimination, the corpus boundary (symlink escape, path
+#                                         traversal), encodings (CRLF/BOM/mixed/unicode),
+#                                         index integrity, cross-process index reload, the guarded
+#                                         write door, read-only mode, recent recall under a real
+#                                         killed writer — and, since 1.7.1, the SCHEDULER E2E.
+#
+# 🟥 WHY THE WINDOWS LEG OF `verify` IS NOW LOAD-BEARING AND NOT JUST THOROUGH. Capture's 5-minute
+# walk used to come from a macOS LaunchAgent, so on Windows it never ran; 1.7.1 moved the clock into
+# the server, and test/public/scheduler-e2e.mjs is the check that says so. It starts a real
+# `node index.js` over stdio, waits, and asserts an exchange reached the store, the index and a
+# `latest` answer with nothing else installed — then asserts the identical fixture under
+# MEMORY_SCHEDULER=0 is captured by nobody. Its budget is ~15 s (~52 s worst case on a cold model
+# cache). If it is ever skipped on win32, the platform the feature is FOR is unproved.
+#
+# Neither depends on the author's memories, on wall-clock time, or on how many documents exist.
+#
+# It is NOT the author's private suite (1,237 checks), which asserts against their own memories by
+# name and cannot ship — the release gate refuses it because several of its tests assert on real
+# redaction targets and therefore contain them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['20', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --no-audit --no-fund
+      # A fresh HOME on purpose: the server must not need anything from the runner's home
+      # directory, and Windows + CRLF is the historically worst area in this project.
+      #
+      # THE TWO SCRIPTS BY NAME, never `npm test`. This one workflow runs in two repos, and
+      # `npm test` does not mean the same thing in both: the released tree rewrites it to exactly
+      # these two commands, while in the source repo it is the author's suite, which asserts
+      # against the author's own memories and therefore dies on a bare runner at "No index".
+      # That mismatch left CI red on 15 of 17 runs -- a permanently failing CI teaches everyone
+      # to ignore it, which costs more than having none. Naming the scripts makes both repos run
+      # the same 89 checks. The author's suite stays a local gate, because it cannot be anything
+      # else.
+      - run: node scripts/verify-stdio.js
+        env:
+          MEMORY_AUTHOR_CORPUS: '0'
+      - run: node test/public/run-public-tests.js
+        env:
+          MEMORY_AUTHOR_CORPUS: '0'
+
+  end-to-end:
+    # THE ARTEFACT, DRIVEN LIKE A USER, ON ALL THREE PLATFORMS.
+    #
+    # This job used to be inline shell on ubuntu-latest only, so Windows and macOS ran the fixture
+    # suite but never once indexed a folder of memories, retrieved from it, or imported anything.
+    # That is the exact shape of the bug this replaced: `.html` import silently required a macOS
+    # binary, imported 2 of 3 files on Linux and Windows with no error, and no job would have
+    # noticed. The script is Node rather than shell so all three platforms run identical
+    # assertions instead of three dialects of the same intention.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: build an index, retrieve from it, and import three formats
+        run: node test/public/e2e-index-and-search.mjs
+        env:
+          MEMORY_AUTHOR_CORPUS: '0'
+
+  real-book-windows:
+    # A REAL book, downloaded, on Windows. The generated stand-in in the main job shares the
+    # author's assumptions about what a book looks like; a Gutenberg text has front matter, a
+    # table of contents, CRLF line endings, roman-numeral chapters and a licence trailer. Running
+    # it found two things the synthetic one could not: the CLI silently ignored an unknown option,
+    # and it filed a 434 KB book into the WORKING corpus because the uncategorised-import guard
+    # lived only in the MCP path. Network-dependent, so it is its own job and not in the gate.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: node test/public/e2e-index-and-search.mjs
+        env:
+          MEMORY_AUTHOR_CORPUS: '0'
+          MEMORY_E2E_REAL_BOOK: '1'

@@ -1,0 +1,23 @@
+name: Feature request or idea
+description: Something you want it to do that it does not
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The underlying goal, not only the feature you have in mind — there may be a better route to it.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What happens today instead?
+  - type: markdown
+    attributes:
+      value: |
+        **A note on how this project decides.** Changes that make the server *judge* more —
+        new thresholds, new heuristics about what is relevant — are held to measurement rather
+        than argument, and usually ship in a shadow mode that logs without changing answers
+        first. If you have a concrete case where the current behaviour is wrong, that case is
+        worth more than a proposed design.

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or general discussion
+    url: https://github.com/dfrancislyondflabc-tech/recall-mcp/discussions
+    about: For "how do I…", setup help, or anything that is not a defect.

@@ -1,0 +1,96 @@
+node_modules/
+
+# The built index — 15 MB of vectors, regenerable in ~3 min with `npm run index`.
+# It also mirrors corpus text, so it must never reach a remote.
+.memory-index.json
+*.memory-index.json
+
+# The downloaded embedding model (~35 MB).
+.model-cache/
+
+# scratch
+*.log
+.DS_Store
+
+# Retrieval telemetry (lib/search.js logQuery). Same reason as the index: it
+# mirrors corpus text and every query ever asked, so it must never reach a
+# remote. Regenerable only by using the server. MEMORY_QUERY_LOG=0 disables it.
+.query-log.jsonl
+*.query-log.jsonl
+
+# The server's OWN memory store (lib/config.js ownStoreDir). Auto-ingested
+# material lives here; like the index it mirrors private content and must never
+# reach a remote.
+store/
+.staging-index.json
+*.staging-index.json
+
+# The handoff-document index (lib/config.js handoffIndexPath). Same reason as
+# the others: it mirrors the text of documents that live outside this repo.
+.handoff-index.json
+*.handoff-index.json
+
+# The other-projects index (lib/config.js projectsIndexPath). Same reason again:
+# it mirrors the text of every OTHER project's memory folder.
+.projects-index.json
+*.projects-index.json
+
+# atomic-write scratch files (lib/index-store.js)
+*.tmp
+
+# Shadow telemetry (lib/ordinary-shadow.js). It records REAL QUERY TEXT and corpus snippets,
+# so it is exactly the kind of file that must never reach a repository. It was committed once,
+# by a `git add -A`, and the release gate is what caught it.
+.shadow/
+
+# The vector cache (lib/vector-cache.js): ~116 MB of embeddings, derivable from
+# the corpus, and it mirrors chunk text. Never to a remote.
+.vector-cache.json
+*.vector-cache.json
+
+# The library-category indexes (lib/config.js libraryIndexPath): one per
+# category, same reason as every other index — they mirror the text of imported
+# books/manuals, so they must never reach a remote (and never a zip).
+.lib-*-index.json
+
+# Rolled query-log generations (Phase 1a rotation) and the preserved pre-fix
+# archive: same content class as the live log — mirrors corpus text and every
+# query ever asked. Never to a remote.
+.query-log.*.jsonl
+archive-*.query-log.jsonl
+
+# The probe sweep sidecar (Phase 3a): verdicts about memory claims — mirrors
+# claim text, regenerable nightly. Never to a remote.
+.probe-results.json
+*.probe-results.json
+
+# The protected-set margin history (hardening item 1b): one dated JSON line per
+# monitor run, recording how much room the gold and verbatim fixtures have left.
+# Derived from the live corpus and regenerable; never to a remote.
+.margin-history.jsonl
+*.margin-history.jsonl
+.runtime-cache/
+SETUP.html
+claude-config-snippet.json
+
+# This machine only: paths, org domain, self addresses. Never shipped.
+local-config.json
+
+# Measurement before-images (scripts/measure-vector-fidelity.js). Same content class as the index
+# and the query log: they mirror corpus text, so they never reach a remote.
+.baseline/
+
+# The RELEASED capture copy the hooks and LaunchAgent run (scripts/release-capture.sh). Derived from
+# committed code, machine-local, regenerable. Never to a remote. (dist/ holds NOTHING ELSE since
+# MEM-70: its five install docs contradicted every zip that ships and named a broken entry point.)
+dist/capture/
+dist/.capture-staging.*
+
+# Snapshots taken before any frontmatter edit (lib/safe-write.js). Regenerable, machine-local,
+# and the suite creates them inside test fixtures when it exercises setTier/setModified.
+.memory-snapshots/
+
+# A LIVE ranking snapshot is derived from the author's own working vocabulary — the query list
+# would be a list of what they actually search for. `--corpus gold` produces the committed
+# baseline (test/ranking-snapshot-gold.json); anything live stays here.
+test/ranking-snapshot-live*.json

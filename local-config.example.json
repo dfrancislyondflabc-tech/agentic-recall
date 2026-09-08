@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to local-config.json (gitignored) and edit. Every value is optional; environment variables override it.",
+  "memoryDir": "/absolute/path/to/your/memories",
+  "libraryDir": "/absolute/path/to/your/reference/library",
+  "keepEmailDomains": ["your-org.example"],
+  "keepEmails": ["you@example.com"]
+}

@@ -1,0 +1,64 @@
+#!/bin/bash
+# commit-msg — refuse a revert that does not say WHY.
+#
+# 2026-08-29. `git revert` writes:
+#
+#     Revert "corpus: the 2026-08-19 refresh, +5 chunks, finally committed"
+#
+#     This reverts commit 5440837a086666b2f2276bf1edd408bdf8c3860f.
+#
+# and that is ALL commit 3575779 said. Four days later nobody could answer why
+# those 5 chunks were pulled — the KB drifted, a v113 build burned a red gate on
+# it, and reconstructing the reason took an hour of forensics across three repos
+# and four file states. One sentence at revert time would have cost ten seconds.
+#
+# A revert is the one commit where the diff CANNOT explain itself: it shows what
+# was undone, never what was wrong with it. So this is the one place a message is
+# load-bearing rather than courtesy.
+#
+# Narrow by design — it fires ONLY on git's own untouched template.
+MSG_FILE="$1"
+[ -f "$MSG_FILE" ] || exit 0
+
+# Strip comments and blank lines; keep what the author actually wrote.
+BODY="$(grep -v '^#' "$MSG_FILE" | sed '/^[[:space:]]*$/d')"
+SUBJECT="$(printf '%s\n' "$BODY" | head -1)"
+
+case "$SUBJECT" in
+  Revert\ \"*) ;;
+  *) exit 0 ;;                       # not a revert — nothing to say about it
+esac
+
+# Everything after the subject, minus git's own "This reverts commit <sha>." line.
+REMAINDER="$(printf '%s\n' "$BODY" | tail -n +2 \
+  | grep -viE '^[[:space:]]*This reverts commit [0-9a-f]{7,40}\.?[[:space:]]*$' \
+  | sed '/^[[:space:]]*$/d')"
+
+if [ -z "$REMAINDER" ]; then
+  cat >&2 <<'MSG'
+
+REFUSING THE REVERT — it does not say why.
+
+  git's template tells the next reader WHAT was undone. It cannot tell them what
+  was WRONG with it, because that information exists only in your head right now.
+
+  This is not bureaucracy. Commit 3575779 reverted a KB corpus refresh with
+  exactly this untouched template. Four days later the chat-bot KB was drifting
+  in three directions, a v113 build failed a gate on it, and working out whether
+  those chunks were removed deliberately or by accident took an hour across three
+  repos. One sentence would have answered it.
+
+  Add a line saying what was wrong. Examples:
+
+    Revert "corpus: the 2026-08-19 refresh, +5 chunks"
+
+    The release-note chunks need a dense embeddings rebuild to be usable, and
+    shipping them without one kills the whole semantic leg silently.
+
+  If the revert genuinely needs no reason, say that and it passes:
+  "No reason needed - committed to the wrong branch."
+
+MSG
+  exit 1
+fi
+exit 0

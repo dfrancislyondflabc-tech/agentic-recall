@@ -1,0 +1,105 @@
+{
+  "_comment": [
+    "packaging/release-exclude.json — WHAT MAY NOT LEAVE THIS MACHINE, in ONE place.",
+    "",
+    "Read by scripts/release-tree.mjs, which is called by BOTH release builders:",
+    "  scripts/build-public-tree.sh   the fresh public repository",
+    "  scripts/build-zip.sh           the clean and portable zips (never `mine`)",
+    "",
+    "WHY ONE FILE AND NOT TWO LISTS. Until now build-public-tree.sh held the list and",
+    "build-zip.sh held none, and the two artefacts drifted exactly as far apart as that",
+    "sounds: the public tree removed the private test suite, the portable zip shipped",
+    "`git archive HEAD` — i.e. everything tracked — and printed 'verified: no personal",
+    "content' while carrying a colleague's email address, two internal IPv4s, a NAS share",
+    "path and 33 of the author's real memories in a fixture directory named after him.",
+    "Both builders now read THIS file, so an exclusion added for one artefact cannot be",
+    "missing from the other. Adding a path here is the whole edit.",
+    "",
+    "THIS IS THE PROMISE, NOT THE PROOF. scripts/check-release-clean.mjs is the proof, and",
+    "both builders run it against the STAGED tree and refuse to produce an artefact if it",
+    "finds anything. A list of exclusions maintained by hand has been re-read and found",
+    "wrong twice; the gate is what catches the miss.",
+    "",
+    "`keep` IS DELIBERATELY POSITIVE. `test` is excluded wholesale and the two shippable",
+    "subtrees are named back in, so a NEW file under test/ is private BY DEFAULT and only",
+    "these paths can ever ship. Naming 60 exclusions instead would make the next new",
+    "fixture public by accident."
+  ],
+
+  "exclude": [
+    {
+      "path": "test",
+      "why": "THE PRIVATE SUITE. 9,400 lines asserting against one particular corpus — it fails for anyone else — and it holds internal host addresses, a colleague's real email, the author's own address, a NAS share path, and test/fixtures/projects/ which is a copy of his memory folder (33 .md files). Excluding it removes an entire class of exposure and costs the recipient nothing they could have used. A synthetic fixture corpus would let it ship one day; that is a separate project. See `keep` for the two subtrees that DO ship."
+    },
+    {
+      "path": ".github/workflows/portable-macos.yml",
+      "why": "This workflow greps for a live credential BY VALUE, to prove it is absent from a built zip — so the file CONTAINS the credential."
+    },
+    {
+      "path": ".github/workflows/portable-windows.yml",
+      "why": "Same: it names the credential in order to assert its absence. NOTE both are excluded BY NAME, never by directory — excluding all of .github/workflows/ also dropped ci.yml and left the published repo with NO CI, the first thing a reviewer looks for. ci.yml names no credential and is scanned by the gate like everything else that ships."
+    },
+    {
+      "path": ".github/workflows/stress-windows.yml",
+      "why": "It drives test/recall-stress/, which does not ship — a workflow that references a path excluded from the tree is exactly the failure class scripts/audit-read-paths.mjs exists for, in a file format that checker cannot read. The SCRIPT half of the job does ship (test/public/campaign-lite.mjs); only the author's scheduling of it does not."
+    },
+    {
+      "path": "scripts/build-zip.sh",
+      "why": "The author's own packaging: it embeds their paths and their memory folder, and a recipient of a zip has nothing to build. (It is also the script that reads this file — a build tool need not ship in its own output.)"
+    },
+    {
+      "path": "scripts/probes.json",
+      "why": "Benchmark fixture written from real customer questions; names customers and product models."
+    },
+    { "path": "scripts/run-probe-calibration.js", "why": "Measurement harness bound to the author's corpus." },
+    { "path": "scripts/score-currency.js",        "why": "Measurement harness bound to the author's corpus; reads test/currency-questions.json, which does not ship." },
+    { "path": "scripts/measure-key-facts.js",     "why": "Measurement harness bound to the author's corpus." },
+    { "path": "scripts/test-probe-veto.js",       "why": "Measurement harness; carries a NAS share path and an internal hostname." },
+
+    {
+      "path": "scripts/measure-longdoc.js",
+      "why": "READS A FIXTURE THAT DOES NOT SHIP (scripts/probes.json or test/*.json), so in a release tree it is guaranteed to throw. Found by auditing the staged tree for live references to excluded paths rather than by assuming the first exclusion list was right — scripts/audit-read-paths.mjs now does that automatically, in both builders."
+    },
+    { "path": "scripts/bench-probes.js",   "why": "Same class: unguarded read of a fixture that does not ship." },
+    { "path": "scripts/measure-absence.js", "why": "Same class: unguarded read of a fixture that does not ship." },
+    { "path": "scripts/sweep-sections.js",  "why": "Same class: unguarded read of a fixture that does not ship." },
+
+    {
+      "path": "scripts/measure-graph-spread.js",
+      "why": "Holds benchmark questions written from the author's corpus, naming a real competitor. Found by a vendor-term sweep of the STAGED tree rather than of the repo."
+    },
+    { "path": "scripts/measure-graph-spread-v2.js", "why": "Same as measure-graph-spread.js: benchmark questions written from the author's corpus, naming a real competitor." },
+
+    {
+      "path": "scripts/eval-state.js",
+      "why": "Unguarded top-level readFileSync of a test/ fixture, so it throws ENOENT on a public clone. This was the one that mattered: it is an npm script, so `npm run eval:state` died for anyone who tried it. Found by RUNNING every npm script on a fresh install, not by re-reading this list."
+    },
+    { "path": "scripts/measure-sku-alias.js",      "why": "Same class as eval-state." },
+    { "path": "scripts/measure-library-recall.js", "why": "Same class as eval-state." },
+    { "path": "scripts/monitor-margins.js",        "why": "Same class as eval-state." },
+    {
+      "path": "scripts/measure-vector-fidelity.js",
+      "why": "Question set written against the author's corpus, naming an internal tool. Caught by the gate rather than by reading this list. scripts/measure-index-memory.js is deliberately NOT here — it takes an index path and asserts nothing about content."
+    },
+
+    {
+      "path": "lib/ordinary-shadow.js",
+      "why": "UNPROVEN INSTRUMENTATION DOES NOT SHIP. The ordinary-word probe is a measurement running against the author's corpus under a pre-registration, and its own reading rule says it earns a PROPOSAL, not a behaviour. lib/search.js imports it lazily and optionally for exactly this reason, and searching is unaffected by its absence (asserted in the suite)."
+    }
+  ],
+
+  "keep": [
+    {
+      "path": "test/public",
+      "why": "A suite that runs only on fixtures — no author corpus, no clock, no dependence on how many documents exist. It is what `npm test` is repointed at in a release tree, and it is the suite the Windows hand-off runs."
+    },
+    {
+      "path": "test/fixtures/gold-corpus",
+      "why": "16 committed memories about a bike workshop — a frozen synthetic corpus the public suite asserts against."
+    },
+    {
+      "path": "test/sandbox-env.js",
+      "why": "🟥 MEM-68/U-2. 92 lines of env-var names and a join() — no corpus, no addresses, nothing personal — and the ONE consumer that ships, test/public/campaign-lite.mjs, deliberately inlines the same list and cross-checks itself against this file as TEXT. Excluding it had two costs, both found on a real upgrade (campaign D.4): unzipping over an older install leaves the OLD copy on disk, so the cross-check compares today's inlined list against a stale one and a harness author who reads the list from the install gets whichever version that install happens to hold (1.7.0's had 15 entries, 1.7.1's 20); and in a fresh install the cross-check has nothing to read and is silently vacuous. Shipping it makes the upgrade overwrite the stale copy and gives the assertion something true to compare against in every artefact."
+    }
+  ]
+}
