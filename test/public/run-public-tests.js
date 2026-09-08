@@ -954,6 +954,14 @@ group('the store is truth — a file the index has not read yet is served, and t
 // the public suite, PRECISELY so it runs on windows-latest: the 5-minute capture walk used to come
 // from a macOS LaunchAgent, so on Windows it never ran at all, and a Windows-shaped feature proved
 // only on a Mac is not proved. Budget: ~15 s, dominated by the deliberate 12 s control.
+// =============================================================================================
+// WHERE A PACKAGE INSTALL WRITES ITS STATE. Cheap (subprocesses, no model, no index) and placed
+// before the slow end-to-end checks so a broken resolver fails fast.
+{
+  const { stateRootTests } = await import('./state-root.mjs');
+  await stateRootTests({ check, group });
+}
+
 {
   const { schedulerE2E } = await import('./scheduler-e2e.mjs');
   await schedulerE2E({ check, group });
