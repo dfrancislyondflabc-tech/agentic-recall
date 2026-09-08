@@ -36,6 +36,7 @@ import { attachProbeVerdicts } from '../lib/probe-surface.js';
 import { keyFactsPathFor } from '../lib/key-facts.js';
 import { serverVersionString, SERVER_STARTED_AT } from '../lib/version.js';
 import { log, warn } from '../lib/logger.js';
+import { CODE_ROOT } from '../lib/state-root.js';
 
 const REFUSAL = (name, why) => ({
   refused: true,
@@ -1068,7 +1069,8 @@ function doCapture({ sinceMinutes }) {
   // BOTH STREAMS. Every script here logs to STDERR, because in an MCP server stdout belongs to
   // the JSON-RPC protocol. Reading only stdout returned a confident ok:true with nothing in it —
   // the report was going to the stream we were not listening on.
-  const r = spawnSyncHidden(process.execPath, [join(ROOT, 'scripts/auto-ingest.js')], {
+  // CODE_ROOT: the walker is shipped code, so it lives beside this file, not in the state root.
+  const r = spawnSyncHidden(process.execPath, [join(CODE_ROOT, 'scripts/auto-ingest.js')], {
     encoding: 'utf8', timeout: 15 * 60_000,
     env: { ...process.env,
       MEMORY_AUTO_INGEST: 'always',

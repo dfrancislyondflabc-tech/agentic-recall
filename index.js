@@ -15,6 +15,66 @@ import { versionBanner, serverVersionString, serverVersion } from './lib/version
 import { startHeartbeat } from './lib/heartbeat.js';
 import { startScheduler } from './lib/scheduler.js';
 
+// ---- CLI FLAGS, BEFORE ANYTHING ELSE -------------------------------------------------------
+// This ships as a `bin`, so `npx -y agentic-recall --version` is the first thing a person runs to
+// check the install worked. Before 1.8.0 an unknown argument was ignored: the process started a
+// full MCP server on a closed stdin and exited 0, which looks exactly like success and tells the
+// caller nothing. Handled here, ahead of every import side effect, so no scheduler starts and no
+// state directory is created just to answer a question about the version.
+//
+// stdout is the JSON-RPC channel for the SERVER; these paths never start one, so printing to
+// stdout here is correct — a caller piping `--version` wants it on stdout, not stderr.
+// One version string for both flags: the commit is the useful half in a checkout, and there is
+// no commit in a package install — where "1.8.0@unknown-sha(no-git)" reads as a failed install.
+const displayVersion = () => {
+  const v = serverVersion();
+  return v.source === 'git' ? serverVersionString() : v.packageVersion;
+};
+
+{
+  const argv = process.argv.slice(2);
+  const has = (...f) => argv.some((a) => f.includes(a));
+  if (has('-v', '--version')) {
+    // In a CHECKOUT the commit is the useful half — two installs can both say 1.8.0 and differ.
+    // In a PACKAGE install there is no git, and the honest string for that is "1.8.0@unknown-sha
+    // (no-git)", which reads to a new user as something having gone wrong on their first command.
+    // So: the full string when there is a commit to name, the plain version when there is not.
+    console.log(displayVersion());
+    process.exit(0);
+  }
+  if (has('-h', '--help')) {
+    console.log([
+      `agentic-recall ${displayVersion()} — long-term memory for agentic tasks.`,
+      '',
+      'It is an MCP server: it speaks JSON-RPC over stdin/stdout and is meant to be',
+      'launched by a client, not run by hand. Add it to your Claude config as:',
+      '',
+      '  "memory": { "command": "npx", "args": ["-y", "agentic-recall"],',
+      '              "env": { "MEMORY_DIR": "/path/to/your/memory/folder" } }',
+      '',
+      'Flags:',
+      '  -v, --version   print the version and exit',
+      '  -h, --help      print this and exit',
+      '',
+      'Key environment variables:',
+      '  MEMORY_DIR      the folder holding your memories. Required; never guessed.',
+      '  MEMORY_ROOT     where the model cache, vector cache and indexes live.',
+      '                  Defaults beside the code for a clone, ~/.agentic-recall for',
+      '                  a package install.',
+      '',
+      'Docs: https://github.com/dfrancislyondflabc-tech/agentic-recall#readme'
+    ].join('\n'));
+    process.exit(0);
+  }
+  const unknown = argv.filter((a) => a.startsWith('-'));
+  if (unknown.length) {
+    // Refuse rather than ignore. A silently-dropped flag is how a person concludes an option
+    // exists when it does not.
+    console.error(`agentic-recall: unknown option ${unknown[0]}. Try --help.`);
+    process.exit(2);
+  }
+}
+
 // ---- Graceful signal handling ----
 // Prevents a Claude Desktop crash on disconnect or kill.
 process.on('SIGPIPE', () => { /* ignore — the client closed the pipe */ });

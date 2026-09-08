@@ -1,10 +1,28 @@
 {
   "name": "agentic-recall",
-  "version": "1.7.5",
+  "version": "1.8.0",
   "type": "module",
   "description": "Long-term memory for agentic tasks. It tells you when it doesn't know.",
   "main": "index.js",
-  "private": true,
+  "bin": {
+    "agentic-recall": "index.js"
+  },
+  "mcpName": "io.github.dfrancislyondflabc-tech/agentic-recall",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "tools/",
+    "scripts/",
+    "docs/",
+    "secrets-exclude.json",
+    "local-config.example.json",
+    "CHANGELOG.md",
+    "PRIVACY.md",
+    "MEMORY-SAFETY.md"
+  ],
   "scripts": {
     "start": "node index.js",
     "index": "node scripts/build-index.js",
@@ -49,6 +67,12 @@
     "bm25",
     "embeddings",
     "hybrid-search",
-    "claude"
+    "claude",
+    "claude-code",
+    "claude-desktop",
+    "long-term-memory",
+    "rag",
+    "vector-search",
+    "semantic-search"
   ]
 }

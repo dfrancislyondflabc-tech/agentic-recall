@@ -111,6 +111,34 @@ export async function stateRootTests({ check, group }) {
         !== join(fakeHome, '.agentic-recall'),
       'a plain directory was relocated — the rule is not about _npx at all');
 
+    // ---- SHIPPED CODE IS NOT STATE. The distinction this file exists to keep straight, and the
+    // one the first cut of 1.8.0 got wrong: secrets-exclude.json is the redaction rule set that
+    // SHIPS with the code, so it must be read from the code directory. Resolved from the state
+    // root instead, it is absent on every package install and the server fails closed at startup
+    // — which is exactly what `npm install <tarball>` did before this was fixed.
+    //
+    // Forcing MEMORY_ROOT to a directory that is NOT the code directory is what makes the two
+    // roots differ; with them equal (an ordinary checkout) this check cannot fail and would be
+    // worthless. Run in a subprocess so the env var applies at module load.
+    {
+      const stateElsewhere = join(tmp, 'state-elsewhere');
+      mkdirSync(stateElsewhere, { recursive: true });
+      const script =
+        `import('file://${join(REPO, 'lib', 'config.js').replace(/\\/g, '/')}')` +
+        `.then(m => process.stdout.write(JSON.stringify({` +
+        `  secrets: m.secretsConfigPath(), index: m.indexPath(), root: m.ROOT })))`;
+      const out = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+        encoding: 'utf8',
+        env: { ...process.env, MEMORY_ROOT: stateElsewhere, MEMORY_SECRETS_CONFIG: '', MEMORY_INDEX: '' }
+      }));
+      check('(sr8) the state root really did move — otherwise the next two checks are vacuous',
+        out.root === stateElsewhere, `ROOT=${out.root}`);
+      check('(sr8) shipped config (secrets-exclude.json) is read from the CODE directory',
+        out.secrets === join(REPO, 'secrets-exclude.json'), `got ${out.secrets}`);
+      check('(sr8) [control] ...while written state (the index) follows the STATE root',
+        out.index === join(stateElsewhere, '.memory-index.json'), `got ${out.index}`);
+    }
+
     // ---- The real repo, resolved by the real import: this checkout must be unaffected.
     const live = await import('../../lib/state-root.js');
     check('(sr6) THIS checkout still resolves to itself — no live install is relocated',

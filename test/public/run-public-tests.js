@@ -958,6 +958,11 @@ group('the store is truth — a file the index has not read yet is served, and t
 // WHERE A PACKAGE INSTALL WRITES ITS STATE. Cheap (subprocesses, no model, no index) and placed
 // before the slow end-to-end checks so a broken resolver fails fast.
 {
+  const { cliFlagsTests } = await import('./cli-flags.mjs');
+  await cliFlagsTests({ check, group });
+}
+
+{
   const { stateRootTests } = await import('./state-root.mjs');
   await stateRootTests({ check, group });
 }
@@ -1293,7 +1298,11 @@ group('MEM-69 — no public test may clean up the way the one that died on Windo
     // Strip comment lines so the prose ABOVE a fix cannot satisfy or trip the check.
     const code = src.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
     return {
-      spawnsOrSandboxes: /\bspawn\s*\(|\bspawnSync\s*\(|\bmkdtempSync\s*\(/.test(code),
+      // execFileSync/execSync spawn a process too. They were missing here until cli-flags.mjs
+      // — six subprocesses — slipped past the rule entirely and only the CONTROL below caught
+      // it, by counting one fewer file than the directory holds. That is what the control is
+      // for; the detector it guards is now as wide as the thing it claims to detect.
+      spawnsOrSandboxes: /\bspawn\s*\(|\bspawnSync\s*\(|\bexecFileSync\s*\(|\bexecSync\s*\(|\bexecFile\s*\(|\bmkdtempSync\s*\(/.test(code),
       imports:  /from '\.\/sandbox-cleanup\.mjs'/.test(code),
       // The two shapes MEM-69 was made of, named separately so a failure says which one.
       bareKill: /(?<!stop)(?<!\w)child\.kill\s*\(|\bsrv\.kill\s*\(/.test(code),

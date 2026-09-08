@@ -10,6 +10,42 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [1.8.0] — 2026-09-08
+
+### Added
+
+- **Installable from npm.** `npx -y agentic-recall` is now the whole install. The package was
+  marked `private` and had no `bin`, so the only way to start it was to point `node` at a file and
+  paste an absolute path into your client config — which is also what the README told you to do.
+  The config block is now four lines with one path in it, and that path is your memory folder,
+  which the server will never guess for you.
+- **`--version`, `-v`, `--help`, `-h`.** Shipping a `bin` makes `agentic-recall --version` the
+  first thing anyone runs. It used to be ignored: the process started a full MCP server on a closed
+  stdin and exited 0, which at a shell is indistinguishable from working. An unrecognised flag is
+  now **refused** with exit 2 rather than absorbed.
+- **`~/.agentic-recall` for package installs** (`lib/state-root.js`). Where the server keeps the
+  35 MB embedding model, the vector cache and the indexes is now decided in one place instead of
+  re-derived in five. A clone still keeps them beside the code. A package install does not, because
+  npm's npx cache is disposable: state written there is discarded on eviction, so the model would
+  re-download and the corpus re-embed on a schedule nobody controls.
+
+### Fixed
+
+- **The README pointed at a repository that no longer exists.** The rename to `agentic-recall` left
+  the old name in both setup commands, the clone URL, the issue-template Discussions link and nine
+  CHANGELOG release links. `github.com/dfrancislyondflabc-tech/recall-mcp` returns 404, so anyone
+  who followed the install section could not complete it.
+- **`secrets-exclude.json` was read from the state root.** It is shipped configuration — the
+  redaction rule set the running version was written against — not per-install state. On a package
+  install it was therefore absent and the server failed closed at startup. Found by installing the
+  actual tarball and driving it over stdio; no unit test would have shown it, because in a checkout
+  the two roots are the same directory.
+
+### Changed
+
+- The public suite's "every spawning test cleans up after itself" gate did not recognise
+  `execFileSync` as spawning. Its own vacuity control caught the gap.
+
 ## [1.7.5] — 2026-09-07
 
 ### Fixed — the `scope:'all'` response envelope (MEM-85, MEM-86)
@@ -1335,6 +1371,7 @@ Notable behaviour, since there is no earlier entry to diff against:
 - **Windows correctness**: UTF-8 BOMs and CRLF line endings in frontmatter and bodies are handled.
 - **Every query is logged locally** for measurement (`MEMORY_QUERY_LOG`, `0` disables).
 
+[1.8.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.0
 [1.5.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.5.0
 [1.4.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.4.2
 [1.4.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.4.1
