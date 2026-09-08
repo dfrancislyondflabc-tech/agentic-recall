@@ -209,11 +209,22 @@ export async function recallStressLite({ check, group, sandbox }) {
   check('A: ...and 12 exchanges reached the store', mdCount(store) === 12, `store holds ${mdCount(store)}`);
 
   // ---- B: killed between the write and the index -------------------------------------------
-  const more = writeTranscript(tx, 3, Date.UTC(2026, 8, 5, 8, 0, 0));
+    // 🟥 THE RUN MUST STILL HAVE WORK LEFT WHEN THE KILL LANDS. This used to append THREE
+    // exchanges and fire the kill once three had landed -- i.e. it tried to kill the process at
+    // the exact moment it finished. The poll runs every 2 ms, but the gap between the last file
+    // landing and a clean exit is smaller than that, so the run often exited 0 first; taskkill
+    // then reported killed+gone (the pid really was gone -- it had exited) while `code === 0`
+    // correctly showed the fault never fired, and after three attempts the check failed. Measured
+    // on windows-latest/node-22, 2026-09-08: red once, then green on an identical re-run.
+    //
+    // Twelve appended with the kill armed at three leaves NINE still to write, so the kill lands
+    // mid-run instead of racing the exit. killTarget stays the third: the last one guaranteed to
+    // have reached the store before the kill.
+  const more = writeTranscript(tx, 12, Date.UTC(2026, 8, 5, 8, 0, 0));
   const killTarget = more.written[2];
   const before = mdCount(store);
   let armed = false, why = 'never attempted';
-  for (let attempt = 0; attempt < 3 && !armed; attempt++) {
+  for (let attempt = 0; attempt < 5 && !armed; attempt++) {
     const r = await capture(sb.env, [join(TREE, 'scripts', 'auto-ingest.js'), tx], { killAfter: before + 3, store });
     const landed = killLanded(r);
     // 🟥 THIS run's pid, not "some pid": crashedPids scans the whole log, so a retry would
