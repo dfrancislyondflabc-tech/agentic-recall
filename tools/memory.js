@@ -1534,7 +1534,7 @@ export function registerMemoryTools(server) {
     'because the gap is between the corpus and the world, not inside the index. When the answer ' +
     'matters, CHECK THE WORLD: git log, the filesystem, the running process. And a thread that merely ' +
     'STOPPED reads exactly like one still in progress — silence is not evidence of either.',
-    MEMORY_ARGS,
+      MEMORY_ARGS,
     async (args, extra) => {
       // THE MCP BOUNDARY. Reached only from index.js via registerMemoryTools, so
       // this is the one place that can honestly claim a query came from a caller
@@ -1620,6 +1620,28 @@ export function registerMemoryTools(server) {
   // `{ tool }` stub that returns nothing; those call the handler directly, so they
   // already hand it unknown keys. (a85) drives the REAL McpServer end to end, which
   // is the only place this line can be proven.
+  // TOOL ANNOTATIONS, set on the registered tool rather than passed as a fifth argument to
+  // server.tool(). The SDK serves `tool.annotations` straight off this object, and the 5-arg
+  // overload would have shifted the callback's position -- which 25 test mocks and two scripts
+  // read positionally as the 4th argument. Same destination, no churn, and it sits beside the
+  // inputSchema mutation below that works exactly the same way.
+  //
+  // Each value is a claim about behaviour, so each is at its true value, not its convenient one:
+  //   readOnlyHint FALSE  -- most actions read, but index/import/capture/demote/promote write.
+  //   destructiveHint FALSE -- defensible: there is no delete action, writeNewMemoryFile refuses
+  //     an existing name, frontmatter edits snapshot the previous bytes first, and a replacing
+  //     import ARCHIVES the old version with a supersededAt stamp instead of removing it.
+  //   openWorldHint FALSE -- a closed set of local files, not an open-ended external system. The
+  //     embedding model is fetched once on first index; queries reach nothing off the machine.
+  if (registered) {
+    registered.annotations = {
+      title: 'Memory',
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false
+    };
+  }
+
   if (registered && registered.inputSchema && typeof registered.inputSchema.passthrough === 'function') {
     registered.inputSchema = registered.inputSchema.passthrough();
   }

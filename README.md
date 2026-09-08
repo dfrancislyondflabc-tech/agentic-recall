@@ -30,6 +30,14 @@ and then runs locally. Your memories never leave the machine.
 Built by Daniel Francis-Lyon — questions, bug reports and criticism all welcome, either as an
 issue on this repo or at **danfrancislyon@gmail.com**.
 
+## Privacy Policy
+
+Nothing leaves your machine. Memories are plain files in a folder you choose; the embedding model
+runs locally after a one-time download; there is no telemetry, no analytics and no phone-home. The
+author receives no data from your installation and has no means of doing so.
+
+Full text: **[PRIVACY.md](PRIVACY.md)**.
+
 ## The part most memory tools skip
 
 Retrieval always returns *something*. Ranked by similarity, the least-bad match comes back
