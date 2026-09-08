@@ -176,7 +176,7 @@ const sessionId = basename(file, '.jsonl');
 // A HUMAN NAME FOR THE CHAT. Titles are not stored on disk, but the app derives
 // them from the opening prompt, so the same thing can be recovered locally.
 // It is stamped ALONGSIDE the id, never instead of it: Daniel's own chat list
-// shows "Outlook follow-up emails for Tawk.to..." four separate times, so a
+// shows "Outlook follow-up emails for the chat widget..." four separate times, so a
 // title identifies a chat to a reader while only the id identifies it uniquely.
 //
 // 🟥 SCRUBBED BEFORE IT IS TRUNCATED, and the order is the whole point. The title is derived from

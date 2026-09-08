@@ -853,7 +853,7 @@ blended**, and that is measured twice:
   `referenceChunks`, the corpus-derived p90 chunk count the long-document
   correction normalises against: 14 long documents moved it 16 → 19, which
   raised the dense score of every curated memory above 16 chunks and pushed
-  `deal-reg-email-rules` to 0.3842 against an absence floor of 0.38 — a 0.0042
+  `partner-email-rules` to 0.3842 against an absence floor of 0.38 — a 0.0042
   margin, and the server could no longer say *"I have no memory of a Postgres
   migration"*.
 
