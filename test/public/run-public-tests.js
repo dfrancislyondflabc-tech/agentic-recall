@@ -1367,10 +1367,23 @@ group('MEM-69 — no public test may clean up the way the one that died on Windo
     const out = cleanupSandbox(held, { label: 'mem69-open-fd', attempts: 2, delayMs: 5 });
     try { closeSync(fd); } catch { /* already gone on POSIX */ }
     const posix = process.platform !== 'win32';
+    // 🟥 WINDOWS ASSERTS THE HONEST REPORT, NOT A REMOVAL. The handle is held open across the WHOLE
+    // call, and on Windows that is precisely what makes rmdir fail -- no number of retries helps
+    // while the holder never lets go, because retries exist for a holder that is ABOUT to release.
+    // This passed on node 22 only because newer node opens files with FILE_SHARE_DELETE, so the
+    // unlink succeeds POSIX-style; node 20 does not, and CI went red on windows/20 alone -- caught
+    // by the first public run, 2026-09-08. Asserting the removal there was asserting a node
+    // version, not a contract.
+    //
+    // What must hold on every platform and every version: the cleanup does not throw, and what it
+    // REPORTS matches the filesystem. A cleanup claiming it removed a directory that is still there
+    // is the defect worth catching, and this catches it in both directions.
     check(posix
       ? 'CONTROL — an open fd does NOT block the removal on POSIX (which is why MEM-69 hid on the Mac)'
-      : 'an open fd is survived on Windows too, because the removal retries',
-      out.removed === true && !existsSync(held), JSON.stringify({ ...out, platform: process.platform }));
+      : 'on Windows an open fd may block the removal, and the report matches the filesystem',
+      posix ? (out.removed === true && !existsSync(held))
+            : (typeof out.removed === 'boolean' && out.removed === !existsSync(held)),
+      JSON.stringify({ ...out, stillThere: existsSync(held), platform: process.platform }));
     cleanupSandbox(held);
   }
 
