@@ -1021,7 +1021,24 @@ function doIndexStatus({ jobId }) {
     const jobs = [...INDEX_JOBS.values()].slice(-5).map((j) => ({
       jobId: j.jobId, state: j.state, scopes: j.scopes, startedAt: j.startedAt, finishedAt: j.finishedAt
     }));
-    return { jobs, note: jobs.length ? 'Pass jobId for the full report.' : 'No index job has run in this process.' };
+    // 🟥 THE SAME FIELDS AT THE TOP LEVEL, whether or not a jobId was passed. Without one this
+    // returned only { jobs, note }, with `state` nested a level down; WITH one it returned `state`
+    // at the top. A poller written against either shape never saw `done` in the other — measured
+    // on a Windows install, three false timeouts before the caller worked out that index_status
+    // means two different things.
+    //
+    // The newest job is what a poller is asking about: it has just started an index and wants to
+    // know when THAT finished. Mirroring it here is ADDITIVE — `jobs` and `note` are unchanged, so
+    // nothing reading the old shape breaks.
+    const newest = jobs.length ? jobs[jobs.length - 1] : null;
+    return {
+      jobs,
+      ...(newest ? { jobId: newest.jobId, state: newest.state, scopes: newest.scopes,
+                     startedAt: newest.startedAt, finishedAt: newest.finishedAt } : {}),
+      note: jobs.length
+        ? 'Top-level fields describe the NEWEST job; `jobs` lists the last 5. Pass jobId for the full report on one.'
+        : 'No index job has run in this process.'
+    };
   }
   const job = INDEX_JOBS.get(String(jobId));
   if (!job) return { found: false, jobId, note: 'No such job in THIS server process — a restart clears them.' };

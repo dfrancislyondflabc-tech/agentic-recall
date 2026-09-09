@@ -38,6 +38,12 @@ CI job. Suite 280/0.
 
   Reported by a Windows tester, not found here.
 
+- **`index_status` meant two different things.** Without a `jobId` it returned `{ jobs, note }`
+  with `state` nested inside `jobs[]`; with one it returned `state` at the top level. A poller
+  written against either shape never saw `done` in the other — three false timeouts on the Windows
+  run before the caller worked it out. The list form now mirrors the **newest** job's fields at the
+  top level. Additive: `jobs` and `note` are unchanged.
+
 ### Added
 
 - Checks `(cfg1)`–`(cfg3)` covering the refusal and **both regressions**. Mutation tested in both

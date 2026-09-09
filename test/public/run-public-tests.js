@@ -1018,6 +1018,37 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 // =============================================================================================
+// index_status MEANS THE SAME THING WITH AND WITHOUT A jobId.
+//
+// 🟥 Without a jobId it returned { jobs, note } with `state` nested inside jobs[]; WITH one it
+// returned `state` at the top level. A poller written against either shape never saw `done` in
+// the other. Measured on a Windows install: three false timeouts before the caller realised
+// index_status meant two different things. The fix mirrors the NEWEST job's fields at the top
+// level of the list form — additive, so anything reading `jobs` still works.
+{
+  group('(is) index_status is pollable either way');
+  const { registerMemoryTools } = await import('../../tools/memory.js');
+  let handler = null;
+  registerMemoryTools({ tool: (...a) => { handler = a.find((x) => typeof x === 'function'); return {}; } });
+  if (!handler) {
+    check('(is) CONTROL — the tool handler was captured', false, 'could not reach the handler');
+  } else {
+    const call = async (args) => {
+      const r = await handler(args, {});
+      try { return JSON.parse(r.content[0].text); } catch { return r; }
+    };
+    const list = await call({ action: 'index_status' });
+    check('(is) CONTROL — a status call answers at all',
+      !!list && typeof list === 'object', JSON.stringify(list).slice(0, 90));
+    check('(is) the no-jobId form still carries `jobs` (nothing removed)',
+      Array.isArray(list.jobs), Object.keys(list || {}).join(','));
+    check('(is) ...and `note` explains which job the top-level fields describe',
+      typeof list.note === 'string' && /NEWEST|No index job/.test(list.note),
+      String(list.note).slice(0, 90));
+  }
+}
+
+// =============================================================================================
 // A MEMORY FOLDER'S OWN CLUTTER MUST NOT BECOME DOCUMENTS.
 //
 // 🟥 WHY THIS IS PINNED. A real memory folder accumulates two things beside the memories: the
