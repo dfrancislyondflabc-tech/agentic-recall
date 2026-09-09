@@ -10,6 +10,44 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [1.8.2] — 2026-09-09
+
+Verified on macOS, Linux and Windows against Node 20, 22 and 24, from a checkout; and installed
+from npm — both `npx -y agentic-recall` and `npm i -g agentic-recall` — by the `installed-from-npm`
+CI job. Suite 280/0.
+
+### Fixed
+
+- **🟥 An unconfigured server started anyway, and began capturing transcripts.** `--help` said
+  `MEMORY_DIR` was *"Required; never guessed"* — and it was guessed: unset, it fell back to
+  `./memories` beside the code, and the server started, connected, and reported a corpus at a path
+  that did not exist.
+
+  That would be a cosmetic lie except that the heartbeat and the five-minute capture walker **do
+  not depend on `MEMORY_DIR`**. They read Claude's transcripts and write captured exchanges into
+  the state root regardless. So a mistyped variable, or a client that drops env, did not produce a
+  visibly broken server — it produced a working capture pipeline quietly embedding a user's entire
+  chat history somewhere they never chose. **Measured on a Windows install: 748 exchanges captured
+  from real transcripts with no corpus configured.**
+
+  The server now refuses to start in that case, with exit 78 (`EX_CONFIG`), **before the heartbeat
+  or the walker begin**. Two situations deliberately still start: a set `MEMORY_DIR` (even one
+  pointing at a folder that does not exist yet — that diagnosis belongs to the indexer, whose
+  message names the root it checked); and the zip layout, where `./memories` exists beside the code
+  and no variable is set.
+
+  Reported by a Windows tester, not found here.
+
+### Added
+
+- Checks `(cfg1)`–`(cfg3)` covering the refusal and **both regressions**. Mutation tested in both
+  directions: removing the refusal fails four checks; making it refuse whenever the folder is
+  absent — regardless of whether the variable was set — fails `(cfg3)`. The second mutation
+  survived the first version of these tests, which is why `(cfg3)` exists.
+- `(clutter)` — a memory folder's own `.memory-snapshots/` history and `*.md.bak` leftovers are not
+  indexed. That was true only incidentally (an `.md` filter and a flat directory read); nothing
+  stated it, and "support subfolders" would have silently indexed every superseded copy.
+
 ## [1.8.1] — 2026-09-09
 
 Verified on macOS, Linux and Windows against Node 20, 22 and 24, from a checkout; and installed
@@ -1397,6 +1435,7 @@ Notable behaviour, since there is no earlier entry to diff against:
 - **Windows correctness**: UTF-8 BOMs and CRLF line endings in frontmatter and bodies are handled.
 - **Every query is logged locally** for measurement (`MEMORY_QUERY_LOG`, `0` disables).
 
+[1.8.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.2
 [1.8.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.1
 [1.8.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.0
 [1.5.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.5.0

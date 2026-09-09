@@ -8,6 +8,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { existsSync } from 'node:fs';
 import { log, error } from './lib/logger.js';
 import { registerMemoryTools } from './tools/memory.js';
 import { memoryDir, indexPath, configWarning } from './lib/config.js';
@@ -112,6 +113,38 @@ async function main() {
   // THE CONNECTOR TOGGLE IS THE CAPTURE SWITCH. While this process lives, it leaves a dated
   // mark that scripts/auto-ingest.js reads — so turning the connector off in Claude's UI stops
   // capture, with nothing else to configure. See lib/heartbeat.js.
+  // 🟥 REFUSE TO RUN UNCONFIGURED, BEFORE ANYTHING STARTS WRITING.
+  //
+  // `--help` has always said MEMORY_DIR is "Required; never guessed" — and it was guessed. Unset,
+  // it fell back to ./memories beside the code, and the server started, connected, and reported a
+  // corpus at a path that did not exist. That fallback is DELIBERATE and stays: the zip build ships
+  // a `memories/` folder there, so a zip install works with no configuration. It is only wrong when
+  // that folder is ALSO absent — which is exactly an unconfigured npm install.
+  //
+  // WHY THIS REFUSES RATHER THAN WARNS, and this is the part that matters: the heartbeat and the
+  // five-minute walker below do NOT depend on MEMORY_DIR. They read Claude's transcripts and write
+  // captured exchanges into the state root regardless. So someone who mistypes the variable, or
+  // whose client drops env, does not get a visibly broken server — they get a working capture
+  // pipeline quietly embedding their whole chat history somewhere they never chose. Measured on a
+  // Windows install (2026-09-09): 748 exchanges captured from real transcripts, no corpus set.
+  //
+  // Safe for every working install: a set MEMORY_DIR passes, and a zip's own folder passes. Only
+  // the genuinely unconfigured case stops — and it stops before the first write.
+  {
+    const dir = memoryDir();
+    if (!process.env.MEMORY_DIR && !existsSync(dir)) {
+      error(
+        'REFUSING TO START: no memory folder is configured.\n' +
+        `  MEMORY_DIR is not set, and the fallback ${dir} does not exist.\n` +
+        '  This server will not guess where your notes are, and it will not run its capture\n' +
+        '  walker over your transcripts while it has nowhere to put a corpus.\n' +
+        '  Fix: point MEMORY_DIR at the folder holding your markdown memories --\n' +
+        '    "env": { "MEMORY_DIR": "/absolute/path/to/your/memories" }\n' +
+        '  or create that folder, or set memoryDir in local-config.json.');
+      process.exit(78);   // EX_CONFIG
+    }
+  }
+
   startHeartbeat();
   // AND THE SERVER KEEPS TIME. Capture used to depend on a macOS LaunchAgent that Windows does not
   // have and a Stop hook that only ever reaches the session that just ended, so a chat left open
