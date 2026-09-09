@@ -46,6 +46,13 @@ CI job. Suite 280/0.
 
 ### Added
 
+- **🟥 Windows: `cmd /c npx` is now the documented config, because bare `npx` does not work.**
+  Proven in this repo's CI on `windows-latest`, not inferred: the probe reports
+  `bare npx -> FAILED: spawn npx ENOENT` while `cmd /c npx` completes an `initialize` handshake and
+  returns `serverInfo`. Any Node MCP client using bare `npx` on Windows gets a server that appears
+  configured and silently never connects. (Whether Claude Desktop is affected is still unconfirmed —
+  it may spawn through a shell. The `cmd /c` form works either way.)
+
 - **Windows spawn guidance, and CI that proves it.** On Windows `npx` is a `.cmd` shim that Node's
   `spawn` will not resolve without `shell: true`, so a Node MCP client using the documented config
   gets `spawn EINVAL` and the server **silently never connects** — configured, listed, doing

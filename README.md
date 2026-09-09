@@ -22,12 +22,9 @@ not contain what you asked for.
 That is the whole install. `MEMORY_DIR` is the one path you supply, and that is deliberate:
 the server does **not** go looking through your disk for your notes.
 
-> **🟥 Windows: a client that spawns `npx` directly may never connect.** On Windows `npx` is a
-> batch shim (`npx.cmd`), and Node's `spawn` will not resolve it without `shell: true`. A
-> Node-based MCP client using the config above gets `spawn EINVAL` and the server **silently never
-> connects** — it appears configured and does nothing. This is the standard Windows MCP gotcha, not
-> specific to this server ([claude-code#58510](https://github.com/anthropics/claude-code/issues/58510)).
-> If that happens, wrap it:
+> **🟥 Windows users: use this config instead.** Bare `npx` does not work for a Node MCP client
+> on Windows. This is measured, not inferred — CI spawns the published package on `windows-latest`
+> every push, and reports `bare npx -> FAILED: spawn npx ENOENT` while `cmd /c npx` connects:
 >
 > ```json
 > "memory": {
@@ -37,12 +34,17 @@ the server does **not** go looking through your disk for your notes.
 > }
 > ```
 >
+> On Windows `npx` is a
+> batch shim (`npx.cmd`), and Node's `spawn` will not resolve it without `shell: true`. A
+> Node-based MCP client using the config above gets `spawn EINVAL` and the server **silently never
+> connects** — it appears configured and does nothing. This is the standard Windows MCP gotcha, not
+> specific to this server ([claude-code#58510](https://github.com/anthropics/claude-code/issues/58510)).
 > `npm i -g` is **not** an escape — that installs a `.cmd` shim too. The only shim-free form is
 > pointing `node` at the file directly:
 > `"command": "node", "args": ["C:/Users/<you>/AppData/Roaming/npm/node_modules/agentic-recall/index.js"]`.
 >
-> CI spawns the published package this way on `windows-latest` on every push, so this is measured
-> rather than repeated from the internet.
+> Whether Claude Desktop itself is affected is still unconfirmed — it may spawn through a shell.
+> The `cmd /c` form works either way, so it is the one to use on Windows.
 
 > **🟥 Windows: if `npx` fails with `ECOMPROMISED / Lock compromised`, clear the npx cache.**
 > Node 24/25 with npm 11 leaves a stale lock in npx's cache directory that it then refuses to
