@@ -8,29 +8,24 @@ not contain what you asked for.
 
 ![agentic-recall: a query that hits, and a query that does not](docs/demo.gif)
 
+```bash
+git clone https://github.com/dfrancislyondflabc-tech/agentic-recall.git
+cd agentic-recall && npm install && npm test    # 266 checks, no corpus of your own needed
+```
+
 ```jsonc
 // ~/.claude.json  (Claude Code)  or  claude_desktop_config.json  (Claude Desktop)
 "mcpServers": {
   "memory": {
-    "command": "npx",
-    "args": ["-y", "agentic-recall"],
+    "command": "node",
+    "args": ["/absolute/path/to/agentic-recall/index.js"],
     "env": { "MEMORY_DIR": "/absolute/path/to/your/memory/folder" }
   }
 }
 ```
 
-That is the whole install. `MEMORY_DIR` is the one path you have to supply, and it is
-deliberate: the server does **not** search your disk for your notes.
-
 Requires **Node 20 or newer**. Nothing else — the embedding model downloads on first index
 and then runs locally. Your memories never leave the machine.
-
-Prefer to read the code first, or run the suite?
-
-```bash
-git clone https://github.com/dfrancislyondflabc-tech/agentic-recall.git
-cd agentic-recall && npm install && npm test    # 257 checks, no corpus of your own needed
-```
 
 Built by Daniel Francis-Lyon — questions, bug reports and criticism all welcome, either as an
 issue on this repo or at **danfrancislyon@gmail.com**.
@@ -230,15 +225,7 @@ double-click `SETUP-WINDOWS.cmd` or `SETUP-MACOS.command`. A zip carries its dep
 search model already — there is nothing to clone and nothing to `npm install`. (Up to 1.7.1 the
 zips also shipped a `dist/` install guide that said the opposite; it is gone.)
 
-**From npm — the short way.** Nothing to clone and nothing to build; put the config block at the
-top of this README into your Claude config and you are done. `npx -y agentic-recall` fetches the
-package on first use.
-
-```bash
-npx -y agentic-recall --version     # optional: pull it now rather than on first launch
-```
-
-**From source**, if you would rather read it first or run the suite:
+From source — this is the install:
 
 ```bash
 git clone https://github.com/dfrancislyondflabc-tech/agentic-recall.git
@@ -249,13 +236,14 @@ npm install
 Node 20 or newer. There is nothing to build.
 
 > **Where it keeps its 35 MB.** A clone keeps the model cache, the vector cache and the index
-> beside the code, as it always has. A package install (`npx`, or `npm i -g`) writes them to
+> beside the code, as it always has. Should this ever be installed as a package (`npx`, `npm i -g`)
+> rather than cloned, it writes them to
 > `~/.agentic-recall` instead, because npm's npx cache is disposable and re-downloading the model
 > on eviction would be miserable. `MEMORY_ROOT` overrides both. Your memories themselves are never
 > in either place — they stay wherever `MEMORY_DIR` points.
 
 > **Not the `recall-mcp` on npm.** That name belongs to a different project (a different self-hosted
-> memory server). This one is published as **`agentic-recall`**.
+> memory server). This one is **not on npm yet** — clone it.
 
 **Then tell it where your memories are.** It does **not** search your disk for them — there is no
 sensible default, so it does not guess. `MEMORY_DIR` (or `memoryDir` in `local-config.json`, copied
@@ -1359,8 +1347,8 @@ directory of files.
 {
   "mcpServers": {
     "memory": {
-      "command": "npx",
-      "args": ["-y", "agentic-recall"]
+      "command": "node",
+      "args": ["/absolute/path/to/agentic-recall/index.js"]
     }
   }
 }
@@ -1389,7 +1377,7 @@ discarded one.
 
 ### Claude Code
 ```bash
-claude mcp add memory --scope user -- npx -y agentic-recall
+claude mcp add memory --scope user -- node /absolute/path/to/agentic-recall/index.js
 ```
 Existing Claude Code sessions pick it up on the **next** session, not the
 current one.
