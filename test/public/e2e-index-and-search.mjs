@@ -165,7 +165,13 @@ try {
     '<html><body><h1>Studio rules</h1><p>Wedge the clay twice before throwing, and never leave a bat on the wheel head overnight.</p></body></html>' + NL);
   writeFileSync(join(src, 'glazes.csv'),
     'item,rule,detail' + NL + 'kiln,fires at 1200 degrees,cool overnight or the glaze crazes' + NL + 'glaze,stir before dipping,settled glaze goes on thin' + NL);
-  writeFileSync(join(src, 'skipme.json'), '{"note":"a format the reader cannot use"}');
+  // 🟥 NOT .json any more. This fixture stands for "a format the reader cannot use", and
+  // .json stopped being one in 1.8.1: supportedExtensions() had always ADVERTISED it while
+  // only a ChatGPT export could actually be read, so a plain JSON file was refused as an
+  // "unsupported format .json" in the same response that listed .json as supported. The
+  // CHECK below is about naming what was skipped, not about JSON — so it needs an extension
+  // that is genuinely unreadable, or it passes for the wrong reason.
+  writeFileSync(join(src, 'skipme.bin'), 'a format the reader cannot use');
 
   const into = join(dir, 'imported'); mkdirSync(into, { recursive: true });
   const impEnv = { ...env, MEMORY_DIR: into, MEMORY_INDEX: join(dir, 'imp.json') };
@@ -175,7 +181,7 @@ try {
   const written = readdirSync(into).filter((f) => f.endsWith('.md'));
   check('import reads markdown, html and csv on this platform', written.length === 3,
     'wrote ' + written.length + ': ' + written.join(', ') + ' | ' + String(imp.stdout || '').slice(-200).replace(/\s+/g, ' '));
-  check('...and NAMES the format it could not read', /skipme|json/i.test(String(imp.stdout || '') + String(imp.stderr || '')));
+  check('...and NAMES the format it could not read', /skipme|\.bin/i.test(String(imp.stdout || '') + String(imp.stderr || '')));
 
   // A book-shaped document: many chapters in one file, which must chapter rather than land as one blob.
   const book = join(dir, 'book'); mkdirSync(book, { recursive: true });

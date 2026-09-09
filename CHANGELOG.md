@@ -10,6 +10,27 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [1.8.1] — 2026-09-09
+
+### Fixed
+
+- **`.json` was advertised as a supported import format and then refused.** Only one kind of
+  JSON could actually be read — a ChatGPT export. Any other JSON file fell past every branch of
+  the reader to `unsupported format .json`, so a single `import` response could say, at once:
+  `shape: "JSON (read as text — not a recognised export)"`, `skippedUnreadable: "unsupported
+  format .json"`, and `supportedFormats: [… ".json" …]`. Plain JSON is now read as text, which is
+  what the shape line already claimed. The ChatGPT-export path still runs first and is unchanged.
+
+  Found by importing a plain JSON file into the **published 1.8.0 package**, not into a checkout.
+
+### Added
+
+- A check that **every advertised format is actually readable** (`(fmt)`), because the format list
+  and the reader were two places that had to agree and nothing made them. A format refused for a
+  *missing converter* — `textutil` is macOS-only, `pdftotext` may not be installed — is a
+  different, legitimate refusal and is still allowed. Mutation-tested by restoring the 1.8.0
+  behaviour, which the check catches by name.
+
 ## [1.8.0] — 2026-09-08
 
 ### Added
@@ -1371,6 +1392,7 @@ Notable behaviour, since there is no earlier entry to diff against:
 - **Windows correctness**: UTF-8 BOMs and CRLF line endings in frontmatter and bodies are handled.
 - **Every query is logged locally** for measurement (`MEMORY_QUERY_LOG`, `0` disables).
 
+[1.8.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.1
 [1.8.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.0
 [1.5.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.5.0
 [1.4.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.4.2

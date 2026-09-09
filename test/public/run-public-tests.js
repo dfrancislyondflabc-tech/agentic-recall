@@ -432,7 +432,13 @@ group('importing a folder reads every format it claims to, and NAMES what it ski
     '<html><body><h1>Studio rules</h1><p>Wedge the clay twice before throwing, and never leave a bat on the wheel head overnight.</p></body></html>\n');
   writeFileSync(join(src, 'rules.csv'),
     'item,rule,detail\nkiln,fires at 1200 degrees,cool overnight or the glaze crazes\nglaze,stir before dipping,settled glaze goes on thin\n');
-  writeFileSync(join(src, 'skipme.json'), '{"note":"a format the reader cannot use"}');
+  // 🟥 NOT .json any more. This fixture stands for "a format the reader cannot use", and
+  // .json stopped being one in 1.8.1: supportedExtensions() had always ADVERTISED it while
+  // only a ChatGPT export could actually be read, so a plain JSON file was refused as an
+  // "unsupported format .json" in the same response that listed .json as supported. The
+  // CHECK below is about naming what was skipped, not about JSON — so it needs an extension
+  // that is genuinely unreadable, or it passes for the wrong reason.
+  writeFileSync(join(src, 'skipme.bin'), 'a format the reader cannot use');
 
   const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'import-memories.js'), src],
     { encoding: 'utf8', env: sb.env, cwd: ROOT, maxBuffer: 32 * 1024 * 1024, windowsHide: true });
@@ -448,7 +454,7 @@ group('importing a folder reads every format it claims to, and NAMES what it ski
   check('the folder import reads markdown, html and csv alike', written.length === 3,
     `wrote ${written.length}: ${written.join(', ')} | ${outText.slice(-200)}`);
   check('...and a format it cannot read is NAMED, not silently dropped',
-    /ignored\s*:/.test(outText) && /skipme\.json/.test(outText), outText.slice(-240));
+    /ignored\s*:/.test(outText) && /skipme\.bin/.test(outText), outText.slice(-240));
 
   cleanupSandbox(sb.dir);
 }
@@ -957,6 +963,60 @@ group('the store is truth — a file the index has not read yet is served, and t
 // =============================================================================================
 // WHERE A PACKAGE INSTALL WRITES ITS STATE. Cheap (subprocesses, no model, no index) and placed
 // before the slow end-to-end checks so a broken resolver fails fast.
+// =============================================================================================
+// EVERY ADVERTISED FORMAT MUST ACTUALLY BE READABLE.
+//
+// 🟥 THE BUG THIS PINS, found by importing a plain JSON file into the PUBLISHED 1.8.0 package.
+// supportedExtensions() listed '.json', and the only .json the reader could actually handle was a
+// ChatGPT export. Everything else fell through to `skip: unsupported format .json` — so one
+// response said, simultaneously: shape "JSON (read as text)", skippedUnreadable "unsupported
+// format .json", and supportedFormats [... ".json" ...]. Advertised and refused at once.
+//
+// The specific fix was one branch. THIS is the general one: the advertised list and the reader
+// are two places that have to agree, and nothing made them. A format may still legitimately be
+// refused for a MISSING CONVERTER (textutil is macOS-only, pdftotext may not be installed) —
+// that refusal names the tool and is a different thing from "I do not know this extension".
+{
+  group('(fmt) the advertised format list vs what the reader will actually read');
+  const { supportedExtensions, readSource } = await import('../../lib/import-sources.js');
+  const exts = supportedExtensions();
+  check('(fmt) CONTROL — the list is non-trivial', exts.length >= 10, `${exts.length} formats`);
+
+  const sample = {
+    '.md': '# Note\n\nWedge the clay twice before throwing.\n',
+    '.markdown': '# Note\n\nWedge the clay twice.\n',
+    '.txt': 'Wedge the clay twice before throwing.\n',
+    '.text': 'Wedge the clay twice before throwing.\n',
+    '.log': 'Wedge the clay twice before throwing.\n',
+    '.csv': 'item,rule\nkiln,cool overnight or the glaze crazes\n',
+    '.tsv': 'item\trule\nkiln\tcool overnight or the glaze crazes\n',
+    '.json': '{"rule":"cool the kiln overnight or the glaze crazes"}\n',
+    '.html': '<html><body><p>Cool the kiln overnight or the glaze crazes.</p></body></html>',
+    '.htm': '<html><body><p>Cool the kiln overnight or the glaze crazes.</p></body></html>'
+  };
+
+  const unknownExtension = [];
+  for (const ext of exts) {
+    if (!(ext in sample)) continue;            // binary formats need real fixtures, not a string
+    const d = mkdtempSync(join(tmpdir(), 'fmt-'));
+    const f = join(d, `probe${ext}`);
+    writeFileSync(f, sample[ext]);
+    let why = '';
+    try {
+      const r = readSource(f, {});
+      const skips = (r.skipped || []).map((x) => x.why || '').join(' ');
+      const got = (r.items || []).length;
+      // "unsupported format" means the reader does not know the extension at all. A converter
+      // that is missing is a DIFFERENT refusal and stays allowed here.
+      if (got === 0 && /unsupported format/i.test(skips)) why = skips;
+    } catch (e) { why = String(e.message).slice(0, 60); }
+    cleanupSandbox(d, { label: 'fmt' });
+    if (why) unknownExtension.push(`${ext}: ${why}`);
+  }
+  check('(fmt) no advertised format is refused as an unknown extension',
+    unknownExtension.length === 0, unknownExtension.join(' | '));
+}
+
 {
   const { cliFlagsTests } = await import('./cli-flags.mjs');
   await cliFlagsTests({ check, group });

@@ -3,13 +3,13 @@
   "name": "io.github.dfrancislyondflabc-tech/agentic-recall",
   "title": "agentic-recall",
   "description": "Long-term memory for agentic tasks. It tells you when it doesn't know.",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "websiteUrl": "https://github.com/dfrancislyondflabc-tech/agentic-recall",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "agentic-recall",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "transport": {
         "type": "stdio"
       },
