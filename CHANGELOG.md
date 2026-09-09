@@ -12,6 +12,11 @@ be checkable.
 
 ## [1.8.1] — 2026-09-09
 
+Verified on macOS, Linux and Windows against Node 20, 22 and 24, from a checkout; and installed
+from npm — both `npx -y agentic-recall` and `npm i -g agentic-recall` — by the `installed-from-npm`
+CI job. Suite 268/0.
+
+
 ### Fixed
 
 - **`.json` was advertised as a supported import format and then refused.** Only one kind of

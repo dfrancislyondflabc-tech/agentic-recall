@@ -22,18 +22,21 @@ not contain what you asked for.
 That is the whole install. `MEMORY_DIR` is the one path you supply, and that is deliberate:
 the server does **not** go looking through your disk for your notes.
 
-> **🟥 Windows + Node 24 or 25: use the global install instead.** `npx` is currently broken there
-> for *every* package — Node 24/25 with npm 11 crashes npx's own cache-lock handling with
-> `npm error code ECOMPROMISED / Lock compromised`
-> ([npm/cli#8710](https://github.com/npm/cli/issues/8710)). Nothing to do with this server; it hits
-> MCP Inspector and Gemini CLI the same way. Two ways round it:
+> **🟥 Windows: if `npx` fails with `ECOMPROMISED / Lock compromised`, clear the npx cache.**
+> Node 24/25 with npm 11 leaves a stale lock in npx's cache directory that it then refuses to
+> refresh ([npm/cli#8710](https://github.com/npm/cli/issues/8710)). Nothing to do with this server
+> — it hits MCP Inspector and Gemini CLI identically. **Measured on a real Windows machine: it
+> reproduced twice, and clearing the cache fixed it** (then a 98 s first download):
 >
 > ```powershell
-> npm install -g agentic-recall     # then use "command": "agentic-recall", "args": []
+> Remove-Item -Recurse -Force "$env:LOCALAPPDATA\npm-cache\_npx" -ErrorAction SilentlyContinue
+> npm cache verify
+> npx -y agentic-recall --version
 > ```
 >
-> …or run Node 22, where npx works normally. The global install is verified end to end and keeps
-> its state in the same place.
+> If it still fails, two alternatives that avoid npx entirely — both verified end to end:
+> `npm install -g agentic-recall` (then `"command": "agentic-recall", "args": []`), or Node 22,
+> where npx works normally.
 
 Requires **Node 20 or newer**. Nothing else — the embedding model downloads on first index
 and then runs locally. Your memories never leave the machine.
