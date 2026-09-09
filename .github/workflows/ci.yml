@@ -40,7 +40,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node: ['20', '22']
+        # 24 is the CURRENT LTS: it is what a new user most likely has, while engines says
+        # ">=20". Proving 20 and 22 and shipping to 24 was a gap, not a policy.
+        node: ['20', '22', '24']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
