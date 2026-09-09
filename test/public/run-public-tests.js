@@ -1017,6 +1017,56 @@ group('the store is truth — a file the index has not read yet is served, and t
     unknownExtension.length === 0, unknownExtension.join(' | '));
 }
 
+// =============================================================================================
+// A MEMORY FOLDER'S OWN CLUTTER MUST NOT BECOME DOCUMENTS.
+//
+// 🟥 WHY THIS IS PINNED. A real memory folder accumulates two things beside the memories: the
+// server's own `.memory-snapshots/` undo history, and editor/backup leftovers like `foo.md.bak`.
+// Both are OLD COPIES of current memories. Indexed, they do not merely add noise — they compete
+// with the live version for the same query, so a search can return the superseded text with a
+// confident score. That is the exact failure this project exists to prevent, arriving through
+// the back door.
+//
+// Today they are excluded by two INCIDENTAL facts, neither of them stated as a rule: the loader
+// filters on `.md` (so `.md.bak` misses), and it reads the directory FLAT (so a subfolder is
+// never entered). Nothing said that was deliberate. "Support subfolders in the memory dir" is a
+// reasonable-sounding feature request that would silently index every snapshot on every machine.
+//
+// Found while building a memories archive for another machine: 63 snapshot files and a 380 KB
+// .bak had to be stripped by hand. The archive was the bug; this checks the SERVER never had it.
+{
+  group('(clutter) snapshots and .bak files are not documents');
+  const { loadCorpus } = await import('../../lib/corpus.js');
+  const d = mkdtempSync(join(tmpdir(), 'clutter-'));
+  mkdirSync(join(d, '.memory-snapshots'), { recursive: true });
+  const fm = (name, desc, body) =>
+    `---\nname: ${name}\ndescription: ${desc}\nmetadata:\n  type: reference\n---\n${body}\n`;
+  writeFileSync(join(d, 'wheel-truing.md'),
+    fm('wheel-truing', 'current', 'Spoke tension is 100 kgf on the drive side.'));
+  writeFileSync(join(d, '.memory-snapshots', 'wheel-truing.20260101T000000Z.md'),
+    fm('wheel-truing', 'OBSOLETE SNAPSHOT', 'Spoke tension is 80 kgf. THIS IS SUPERSEDED.'));
+  writeFileSync(join(d, 'wheel-truing.md.bak'),
+    fm('wheel-truing', 'BAK LEFTOVER', 'Spoke tension is 50 kgf. THIS IS A BACKUP FILE.'));
+
+  // 🟥 A STRING, NOT AN ARRAY. loadCorpus(['/dir']) returns ZERO documents silently — an array
+  // is read as a root-descriptor list, not a list of paths. The first version of this check
+  // passed it an array, loaded nothing, and both exclusion assertions went GREEN on an empty
+  // corpus. Only the CONTROL below caught it. That is what the control is for.
+  let docs = [];
+  try { docs = (loadCorpus(d).docs) || []; } catch (e) { docs = []; }
+  const blob = JSON.stringify(docs);
+
+  check('(clutter) CONTROL — the real memory IS loaded (or the rest is vacuous)',
+    /100 kgf/.test(blob), `${docs.length} doc(s)`);
+  check('(clutter) a .memory-snapshots/ copy is NOT indexed',
+    !/SUPERSEDED|OBSOLETE SNAPSHOT/.test(blob), 'a superseded snapshot became a document');
+  check('(clutter) a .md.bak leftover is NOT indexed',
+    !/BACKUP FILE|BAK LEFTOVER/.test(blob), 'an editor backup became a document');
+  check('(clutter) exactly ONE document came out of a folder holding three files',
+    docs.length === 1, `${docs.length} doc(s): ${docs.map((x) => x.name).join(', ')}`);
+  cleanupSandbox(d, { label: 'clutter' });
+}
+
 {
   const { cliFlagsTests } = await import('./cli-flags.mjs');
   await cliFlagsTests({ check, group });
