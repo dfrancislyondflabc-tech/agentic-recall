@@ -46,6 +46,19 @@ CI job. Suite 280/0.
 
 ### Added
 
+- **Windows spawn guidance, and CI that proves it.** On Windows `npx` is a `.cmd` shim that Node's
+  `spawn` will not resolve without `shell: true`, so a Node MCP client using the documented config
+  gets `spawn EINVAL` and the server **silently never connects** — configured, listed, doing
+  nothing. Not specific to this server; it is the standard Windows MCP gotcha. The README now gives
+  the `cmd /c` wrapper and the shim-free `node` form, and notes that `npm i -g` is *not* an escape
+  (it installs a `.cmd` shim too). `test/public/spawn-as-a-client.mjs` spawns the **published**
+  package with no shell and completes a real `initialize`, run on `windows-latest` on every push.
+
+  🟥 The probe's own first version was wrong in the way this project keeps catching: `npx` run from
+  inside the checkout resolves the LOCAL package. Measured — 1.8.2 from the repo while npm served
+  1.8.1 — so a probe whose entire purpose was "does the published package spawn" answered about the
+  source. It now refuses to run from a non-neutral cwd.
+
 - Checks `(cfg1)`–`(cfg3)` covering the refusal and **both regressions**. Mutation tested in both
   directions: removing the refusal fails four checks; making it refuse whenever the folder is
   absent — regardless of whether the variable was set — fails `(cfg3)`. The second mutation

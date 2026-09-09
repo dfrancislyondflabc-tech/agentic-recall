@@ -120,6 +120,7 @@ jobs:
         method: [npx, global]
     runs-on: ${{ matrix.os }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
@@ -133,6 +134,31 @@ jobs:
             npm i -g agentic-recall
             agentic-recall --version
           fi
+      # 🟥 AND SPAWN IT THE WAY A NODE MCP CLIENT DOES — no shell. On Windows `npx` is a .cmd shim
+      # that Node's spawn will not resolve without shell:true, so a client following the README
+      # verbatim gets `spawn EINVAL` and the server silently never connects. Reported from a real
+      # Windows 11 machine; the same gotcha has an open issue against Claude Code itself
+      # (anthropics/claude-code#58510). The step above only proves the SHELL can run it — this one
+      # proves a client can.
+      - name: spawn it as a Node MCP client would
+        if: matrix.method == 'npx'
+        shell: bash
+        run: |
+          # 🟥 A NEUTRAL CWD. npx run from inside the checkout resolves the LOCAL package, not the
+          # registry — measured: 1.8.2 from the repo while npm served 1.8.1. The probe would then
+          # prove the source spawns, which is not the question.
+          mkdir -p "$RUNNER_TEMP/mem"
+          printf -- '---\nname: probe\ndescription: probe\nmetadata:\n  type: reference\n---\nSpoke tension 100 kgf.\n' > "$RUNNER_TEMP/mem/probe.md"
+          cd "$RUNNER_TEMP"
+          node -e "
+            const { spawnAsAClientTests } = await import('file://$GITHUB_WORKSPACE/test/public/spawn-as-a-client.mjs');
+            let failed = 0;
+            await spawnAsAClientTests({
+              check: (n, ok, d) => { console.log((ok ? '  PASS  ' : '  FAIL  ') + n + (d ? ' — ' + d : '')); if (!ok) failed++; },
+              group: (g) => console.log('=== ' + g + ' ===')
+            }, process.env.RUNNER_TEMP + '/mem');
+            process.exit(failed ? 1 : 0);
+          " --input-type=module
 
   real-book-windows:
     # A REAL book, downloaded, on Windows. The generated stand-in in the main job shares the
