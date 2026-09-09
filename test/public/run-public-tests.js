@@ -1018,35 +1018,22 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 // =============================================================================================
-// index_status MEANS THE SAME THING WITH AND WITHOUT A jobId.
+// index_status — NOT COVERED HERE, DELIBERATELY, AND THE REASON IS WORTH THE SPACE.
 //
-// 🟥 Without a jobId it returned { jobs, note } with `state` nested inside jobs[]; WITH one it
-// returned `state` at the top level. A poller written against either shape never saw `done` in
-// the other. Measured on a Windows install: three false timeouts before the caller realised
-// index_status meant two different things. The fix mirrors the NEWEST job's fields at the top
-// level of the list form — additive, so anything reading `jobs` still works.
-{
-  group('(is) index_status is pollable either way');
-  const { registerMemoryTools } = await import('../../tools/memory.js');
-  let handler = null;
-  registerMemoryTools({ tool: (...a) => { handler = a.find((x) => typeof x === 'function'); return {}; } });
-  if (!handler) {
-    check('(is) CONTROL — the tool handler was captured', false, 'could not reach the handler');
-  } else {
-    const call = async (args) => {
-      const r = await handler(args, {});
-      try { return JSON.parse(r.content[0].text); } catch { return r; }
-    };
-    const list = await call({ action: 'index_status' });
-    check('(is) CONTROL — a status call answers at all',
-      !!list && typeof list === 'object', JSON.stringify(list).slice(0, 90));
-    check('(is) the no-jobId form still carries `jobs` (nothing removed)',
-      Array.isArray(list.jobs), Object.keys(list || {}).join(','));
-    check('(is) ...and `note` explains which job the top-level fields describe',
-      typeof list.note === 'string' && /NEWEST|No index job/.test(list.note),
-      String(list.note).slice(0, 90));
-  }
-}
+// 1.8.2 made the no-jobId form mirror the newest job's fields at the top level, because the two
+// forms previously disagreed about where `state` lived and a poller written for one never saw
+// `done` in the other (three false timeouts, measured on a Windows install).
+//
+// A check was written for it here and REMOVED after mutation testing, because it was vacuous: in
+// this suite no index job has ever run, so `jobs` is empty, the mirror contributes nothing, and
+// the assertion on `note` matched the "No index job has run in this process." branch whether the
+// fix was present or not. Two separate mutations — dropping the mirror entirely, and reverting the
+// note wording — both SURVIVED it.
+//
+// Covering it honestly needs a real index job in-process, which needs the embedding model; that is
+// what test/public/e2e-index-and-search.mjs is for and where it belongs if it is added. Until then
+// the fix rests on a live stdio probe (both forms reported state `done`), and saying so is better
+// than a green check that proves nothing.
 
 // =============================================================================================
 // A MEMORY FOLDER'S OWN CLUTTER MUST NOT BECOME DOCUMENTS.
