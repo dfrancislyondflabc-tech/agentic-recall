@@ -31,6 +31,10 @@ name: CI
 on:
   push:
     branches: [main]
+  schedule:
+    # npm and Node ship on their own cadence; a break in the published install path
+    # arrives without a commit here. Weekly is enough to catch it before a user does.
+    - cron: '0 6 * * 1'
   pull_request:
   workflow_dispatch:
 
@@ -92,6 +96,43 @@ jobs:
         run: node test/public/e2e-index-and-search.mjs
         env:
           MEMORY_AUTHOR_CORPUS: '0'
+
+  installed-from-npm:
+    # 🟥 THE GAP THIS CLOSES, and it cost a false claim in the v1.8.1 release notes. Every job
+    # above tests a CHECKOUT: actions/checkout, then `npm install` on the working tree. NOT ONE of
+    # them installs the PUBLISHED package from the registry — so `npx agentic-recall`, the command
+    # the README leads with, had never run in CI on any platform.
+    #
+    # It broke on Windows within hours of publishing, and not in this project's code: Node 24/25
+    # plus npm 11 on Windows crashes npx's own cache-lock handling with ECOMPROMISED
+    # (npm/cli#8710, hitting MCP Inspector and Gemini CLI the same way). A checkout-based job can
+    # never see that, because it never touches npx.
+    #
+    # So this job installs the way a stranger does, on all three platforms, on the Node versions
+    # where the bug lives. It runs on a schedule as well as on push, because the failure came from
+    # npm's release cadence rather than from a commit here.
+    name: install from npm (${{ matrix.os }}, node ${{ matrix.node }}, ${{ matrix.method }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['22', '24']
+        method: [npx, global]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: install and run the PUBLISHED package
+        shell: bash
+        run: |
+          set -x
+          if [ "${{ matrix.method }}" = "npx" ]; then
+            npx -y agentic-recall --version
+          else
+            npm i -g agentic-recall
+            agentic-recall --version
+          fi
 
   real-book-windows:
     # A REAL book, downloaded, on Windows. The generated stand-in in the main job shares the
