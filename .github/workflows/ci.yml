@@ -157,15 +157,24 @@ jobs:
           mkdir -p "$RUNNER_TEMP/mem"
           printf -- '---\nname: probe\ndescription: probe\nmetadata:\n  type: reference\n---\nSpoke tension 100 kgf.\n' > "$RUNNER_TEMP/mem/probe.md"
           cd "$RUNNER_TEMP"
-          node -e "
-            const { spawnAsAClientTests } = await import('file://$GITHUB_WORKSPACE/test/public/spawn-as-a-client.mjs');
-            let failed = 0;
-            await spawnAsAClientTests({
-              check: (n, ok, d) => { console.log((ok ? '  PASS  ' : '  FAIL  ') + n + (d ? ' — ' + d : '')); if (!ok) failed++; },
-              group: (g) => console.log('=== ' + g + ' ===')
-            }, process.env.RUNNER_TEMP + '/mem');
-            process.exit(failed ? 1 : 0);
-          " --input-type=module
+          # 🟥 THE SCRIPT PATH GOES IN AS AN ARGUMENT, NOT INTERPOLATED INTO THE JS.
+          # On Windows GITHUB_WORKSPACE is D:\a\agentic-recall\agentic-recall. Substituted into a
+          # double-quoted JS string it was re-parsed as escapes and collapsed to
+          #   file://D:aagentic-recallagentic-recall/test/... -> TypeError: Invalid URL
+          # Both Windows npx jobs failed on that, and it looked exactly like the Windows spawn bug
+          # this step exists to detect. Passing argv and building the URL with pathToFileURL keeps
+          # the separators intact on every platform.
+          node --input-type=module \
+            -e "
+              const { pathToFileURL } = await import('node:url');
+              const { spawnAsAClientTests } = await import(pathToFileURL(process.argv[1]).href);
+              let failed = 0;
+              await spawnAsAClientTests({
+                check: (n, ok, d) => { console.log((ok ? '  PASS  ' : '  FAIL  ') + n + (d ? ' — ' + d : '')); if (!ok) failed++; },
+                group: (g) => console.log('=== ' + g + ' ===')
+              }, process.argv[2]);
+              process.exit(failed ? 1 : 0);
+            " "$GITHUB_WORKSPACE/test/public/spawn-as-a-client.mjs" "$RUNNER_TEMP/mem"
 
   real-book-windows:
     # A REAL book, downloaded, on Windows. The generated stand-in in the main job shares the
