@@ -128,6 +128,13 @@ jobs:
         shell: bash
         run: |
           set -x
+          # 🟥 OUT OF THE CHECKOUT FIRST. This job gained actions/checkout so the spawn probe below
+          # could be imported — and that broke it: with a package.json named agentic-recall in the
+          # working directory, `npx -y agentic-recall` resolves the LOCAL tree, which has no
+          # node_modules here, giving ERR_MODULE_NOT_FOUND for @modelcontextprotocol/sdk. Six jobs
+          # went red on every platform. The cwd trap was already documented one step below; adding
+          # the checkout re-introduced it one step above.
+          cd "$RUNNER_TEMP"
           if [ "${{ matrix.method }}" = "npx" ]; then
             npx -y agentic-recall --version
           else
