@@ -163,7 +163,7 @@ async function main() {
   if (cw) log(`CONFIG: ${cw.why} — ${cw.effect}. Fix: ${cw.fix}`);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  log(`Connected — ${serverVersionString()} (1 tool: memory). corpus=${memoryDir()} index=${indexPath()}`);
+  log(`Connected — ${serverVersionString()} (2 tools: memory [read-only], memory_write). corpus=${memoryDir()} index=${indexPath()}`);
 }
 
 main().catch((e) => {

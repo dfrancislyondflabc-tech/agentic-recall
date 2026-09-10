@@ -170,15 +170,41 @@ try {
   // ---- tools/list ----
   const list = await rpc('tools/list', {});
   const tools = list.result?.tools || [];
-  check('tools/list returns exactly one tool', tools.length === 1, tools.map((t) => t.name).join(','));
-  check('the tool is named `memory`', tools[0]?.name === 'memory');
-  const actions = tools[0]?.inputSchema?.properties?.action?.enum || [];
-  // The list was hardcoded at 6 and went stale the moment latest/thread/verify
-  // were added -- it kept passing while silently checking less than it claimed.
-  const EXPECTED = ['search', 'latest', 'thread', 'verify', 'get', 'neighbors', 'index', 'demote', 'promote'];
-  const missing = EXPECTED.filter((a) => !actions.includes(a));
-  check(`schema advertises all ${EXPECTED.length} actions`, missing.length === 0,
-    missing.length ? 'missing: ' + missing.join(',') : actions.join(','));
+  // 2.0.0 — TWO tools. The list was hardcoded at 6 and went stale the moment latest/thread/verify
+  // were added; it kept passing while silently checking less than it claimed. So both lists below
+  // are exhaustive and the PARTITION is asserted, not just the membership: an action reachable from
+  // both tools would make `memory`'s readOnlyHint a lie, and one reachable from neither would be
+  // silently dead with no error anywhere.
+  const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
+  check('tools/list returns exactly two tools', tools.length === 2, tools.map((t) => t.name).join(','));
+  check('the read tool is named `memory`', !!byName.memory);
+  check('the write tool is named `memory_write`', !!byName.memory_write);
+
+  const READ_EXPECTED = ['search', 'latest', 'sessions', 'thread', 'verify', 'index_status', 'get', 'neighbors', 'probe_status'];
+  const WRITE_EXPECTED = ['import', 'capture', 'index', 'demote', 'promote'];
+  const actionsOf = (t) => byName[t]?.inputSchema?.properties?.action?.enum || [];
+  const actions = actionsOf('memory');
+  const writeActions = actionsOf('memory_write');
+
+  for (const [tool, expected, got] of [['memory', READ_EXPECTED, actions], ['memory_write', WRITE_EXPECTED, writeActions]]) {
+    const missing = expected.filter((a) => !got.includes(a));
+    const extra = got.filter((a) => !expected.includes(a));
+    check(`${tool} advertises exactly its ${expected.length} actions`, missing.length === 0 && extra.length === 0,
+      [missing.length ? 'missing: ' + missing.join(',') : '', extra.length ? 'extra: ' + extra.join(',') : ''].filter(Boolean).join(' | ') || got.join(','));
+  }
+  const overlap = actions.filter((a) => writeActions.includes(a));
+  check('no action is reachable from BOTH tools', overlap.length === 0, overlap.join(','));
+
+  // 🟥 THE ANNOTATIONS ARE THE POINT OF THE SPLIT, so they are asserted here rather than assumed.
+  // `memory` claiming readOnlyHint while carrying a write action would be the exact dishonesty
+  // 2.0.0 exists to remove.
+  check('`memory` declares readOnlyHint TRUE', byName.memory?.annotations?.readOnlyHint === true,
+    JSON.stringify(byName.memory?.annotations));
+  check('`memory_write` declares destructiveHint TRUE', byName.memory_write?.annotations?.destructiveHint === true,
+    JSON.stringify(byName.memory_write?.annotations));
+  check('CONTROL — the read tool carries NO write action',
+    !READ_EXPECTED.some((a) => WRITE_EXPECTED.includes(a)) && !actions.some((a) => WRITE_EXPECTED.includes(a)),
+    actions.join(','));
 
   // ---- tools/call: search ----
   const s = await rpc('tools/call', { name: 'memory', arguments: { action: 'search', query: 'how fast does the lighthouse lamp rotate', limit: 3 } });
@@ -274,18 +300,27 @@ try {
   check('probe_status responds', okShape(pst), JSON.stringify(pst).slice(0, 120));
 
   // promote/demote MUTATE — safe here because the corpus is a temp fixture this script wrote.
-  const pro = await rpc('tools/call', { name: 'memory', arguments: { action: 'promote', name: 'verify-fixture-beta' } });
+  const pro = await rpc('tools/call', { name: 'memory_write', arguments: { action: 'promote', name: 'verify-fixture-beta' } });
   check('promote responds', okShape(pro), JSON.stringify(pro).slice(0, 120));
-  const dem = await rpc('tools/call', { name: 'memory', arguments: { action: 'demote', name: 'verify-fixture-beta' } });
+  const dem = await rpc('tools/call', { name: 'memory_write', arguments: { action: 'demote', name: 'verify-fixture-beta' } });
   check('demote responds', okShape(dem), JSON.stringify(dem).slice(0, 120));
 
   // `index` is last of the mutating three: it rewrites the fixture's index file.
-  const idx = await rpc('tools/call', { name: 'memory', arguments: { action: 'index' } });
+  // 🟥 THE CHECK THE 2.0.0 SPLIT EXISTS FOR. A write action asked of the READ tool must be
+  // refused at the MCP boundary — not routed, not tolerated. The corpus is text other people
+  // wrote; a memory that nudges toward `import` or `promote` must not be able to reach either.
+  // The control below is what makes this mean something: the SAME action on `memory_write` works.
+  const refused = await rpc('tools/call', { name: 'memory', arguments: { action: 'promote', name: 'verify-fixture-beta' } });
+  const refusedText = JSON.stringify(refused);
+  check('a WRITE action asked of the read tool is REFUSED', /validation error|Invalid arguments|invalid_enum/i.test(refusedText),
+    refusedText.slice(0, 140));
+
+  const idx = await rpc('tools/call', { name: 'memory_write', arguments: { action: 'index' } });
   check('index responds and rebuilds', okShape(idx), JSON.stringify(payload(idx)).slice(0, 120));
 
   // capture with a window so short nothing can match: exercises the whole path (spawn the hook,
   // parse the transcript, report) without writing anything into anyone's corpus during a test.
-  const cap = await rpc('tools/call', { name: 'memory', arguments: { action: 'capture', sinceMinutes: 0.01 } });
+  const cap = await rpc('tools/call', { name: 'memory_write', arguments: { action: 'capture', sinceMinutes: 0.01 } });
   const cr = payload(cap);
   check('capture responds and reports a count, not null',
     okShape(cap) && typeof cr.exchangesCaptured === 'number', JSON.stringify(cr).slice(0, 140));
@@ -298,7 +333,7 @@ try {
 
   // `import` is the twelfth action. Called with no source it must REFUSE cleanly rather
   // than throw — the failure mode that matters, since every other call path is a refusal.
-  const imp = await rpc('tools/call', { name: 'memory', arguments: { action: 'import' } });
+  const imp = await rpc('tools/call', { name: 'memory_write', arguments: { action: 'import' } });
   check('import with no source refuses cleanly (does not crash the server)',
     imp.result?.isError === true || imp.error || payload(imp), JSON.stringify(imp).slice(0, 140));
 

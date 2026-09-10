@@ -138,7 +138,7 @@ function ask(env, args) {
   const src = `
     const m = await import(${JSON.stringify(pathToFileURL(join(TREE, 'tools', 'memory.js')).href)});
     const c = new Map(); m.registerMemoryTools({ tool: (n, d, s, h) => c.set(n, h) });
-    const r = await c.get('memory')(${JSON.stringify(args)});
+    const __a = ${JSON.stringify(args)}; const __W = new Set(['import','capture','index','demote','promote']); const r = await c.get(__W.has(__a.action) ? 'memory_write' : 'memory')(__a);
     process.stdout.write('@@' + JSON.stringify(JSON.parse(r.content[0].text)) + '@@');`;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', src],
     { env, cwd: TREE, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, windowsHide: true });

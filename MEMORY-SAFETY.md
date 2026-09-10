@@ -2,6 +2,37 @@
 
 The honest answer, with the mechanism, so you can check rather than trust.
 
+## The short version (2.0.0)
+
+**Writes to your memory folder happen in exactly one circumstance: when the `memory_write` tool is
+called.** Everything else this server writes — indexes, the model cache, the query log, captured
+conversation exchanges, dream's queue and bookkeeping — lives under one directory and is
+regenerable.
+
+**Nothing it does can modify or delete a note you wrote.** There is no delete action. `import` only
+creates names that did not exist. `demote`/`promote` rewrite one frontmatter field.
+`MEMORY_CURATED_READ_ONLY=1` refuses all of it outright.
+
+Three things make that structural rather than a promise:
+
+- **The read tool cannot reach a write.** `memory` carries only the nine read actions, so the schema
+  refuses a write action at the MCP boundary. Underneath, the `memory` registration marks its
+  request read-only and `lib/safe-write.js` refuses on that mark — so a write from the read path
+  cannot complete even if some future code path attempted one. That matters because the corpus is
+  text other people wrote: a memory whose body nudges toward `import` or `promote` cannot reach
+  either from the tool that read it.
+- **Dream writes nothing here.** Its `--apply` pass stamps "already scored this" into its own
+  `.dream-state.json` in the cache folder, and queues demotions for a human rather than applying
+  them. Checked by checksumming every memory file across an `--apply` run, not by reading the code —
+  dream's own header comment claimed otherwise for months and was wrong.
+- **Every claim above is a test**, and each was mutation-tested: the guard is deliberately broken and
+  the suite must go red. A check nobody exercised is how two defects reached a release here already.
+
+**One limit stated plainly:** none of this is enforced by the operating system. The server cannot
+restrict its own process permissions. If you want that belt-and-braces, it is yours to set.
+
+
+
 ## What it writes, and where
 
 Two directories, and they are not the same kind of thing:

@@ -10,6 +10,59 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [2.0.0] — 2026-09-10
+
+Verified on macOS, Linux and Windows against Node 20, 22 and 24, from a checkout; and installed
+from npm — both `npx -y agentic-recall` and `npm i -g agentic-recall` — by the `installed-from-npm`
+CI job. Suite 295/0.
+
+### 🟥 BREAKING — writes moved to a second tool
+
+`memory` now carries only the **nine read actions**. `import`, `capture`, `index`, `demote` and
+`promote` moved to a new **`memory_write`** tool. Reads are unchanged: the tool keeps its name, its
+schema and its answers, so every existing `memory({action:"search"})` call still works. Update any
+call that performs a write.
+
+**Why.** An MCP annotation attaches to a TOOL, but the read/write distinction lived in a parameter
+value — so one tool had to declare the worst thing in the box, `readOnlyHint: false`. Two costs:
+recall could never take the no-prompt path Anthropic's criteria describe for read-only tools, and a
+corpus made of text other people wrote sat one action away from inducing a write.
+
+Now `memory` declares `readOnlyHint: true` and `memory_write` declares `destructiveHint: true`, so
+writes always prompt and reads need not.
+
+**The claim is structural, not a promise.** The `memory` registration marks its request read-only and
+`lib/safe-write.js` refuses on that mark, so a write reached from the read path cannot complete even
+if a future code path attempted one. A mutation that removed that enforcement **survived the entire
+295-check suite** — everything else still passed — which is why `(rw)` now covers it with ten checks
+and a control proving the identical write succeeds without the mark.
+
+**Retrieval did not move.** A 34-query ranking snapshot over the committed gold corpus is
+**identical** before and after: same scores, same snippets, same guidance, same absence notes.
+
+### Fixed
+
+- **`MEMORY-SAFETY.md` now states the guarantee it was always trying to make**, and states it
+  precisely: writes to your memory folder happen only via `memory_write`; nothing can modify or
+  delete a note you wrote.
+- **A stale comment in `scripts/dream.js`** claimed `--apply` stamps frontmatter and demotes
+  documents. It does neither — the stamp goes to `.dream-state.json` in the cache folder and
+  demotions are queued for a human. The wording cost a session an afternoon and produced a false
+  bug report about a safety switch dream never needed. `(dream)` now pins it by checksumming every
+  memory file across an `--apply` run.
+
+### Added
+
+- **Which client capture actually works on**, in the README. Retrieval works everywhere with any MCP
+  client; capture reads Claude Code's transcript files and therefore does **not** work for ordinary
+  Claude Desktop chat, whose conversations are never written to disk. Previously the README said
+  nothing either way, so a Desktop user would have got silence with no explanation.
+- `ACTION_PARTITION` — the read/write split must be a partition. An action in both tools would make
+  `readOnlyHint` a lie; one in neither would be silently unreachable.
+- `verify-stdio` asserts both tool names, both action lists exhaustively, no overlap, both
+  annotation sets, and that a write action asked of the READ tool is refused — with the same action
+  on `memory_write` as the control.
+
 ## [1.8.2] — 2026-09-09
 
 Verified on macOS, Linux and Windows against Node 20, 22 and 24, from a checkout; and installed
@@ -1461,6 +1514,7 @@ Notable behaviour, since there is no earlier entry to diff against:
 - **Windows correctness**: UTF-8 BOMs and CRLF line endings in frontmatter and bodies are handled.
 - **Every query is logged locally** for measurement (`MEMORY_QUERY_LOG`, `0` disables).
 
+[2.0.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.0.0
 [1.8.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.2
 [1.8.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.1
 [1.8.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.0
