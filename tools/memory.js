@@ -1304,8 +1304,16 @@ function doTier({ name }, tier) {
 // enumerate it. Everything that reads it — the strictness guard below, the suite's
 // (a24) enum walk, (a85)'s classification check — reads THIS object, so there is
 // one list of accepted arguments rather than three that drift.
+// 🟥 THE FULL ENUM STAYS HERE, and the two tool schemas are DERIVED from it below (READ_ARGS /
+// WRITE_ARGS). Two hand-maintained lists would drift the first time an action is added, and the
+// drift would be silent: an action missing from both enums is simply unreachable, with no error
+// anywhere. One list, split by the WRITE_ACTIONS/READ_ACTIONS sets that already govern argument
+// strictness, so a new action must be classified to exist at all.
+const ALL_ACTIONS = ['search', 'latest', 'sessions', 'thread', 'verify', 'import', 'capture',
+  'index_status', 'get', 'neighbors', 'index', 'demote', 'promote', 'probe_status'];
+
 const MEMORY_ARGS = {
-  action: z.enum(['search', 'latest', 'sessions', 'thread', 'verify', 'import', 'capture', 'index_status', 'get', 'neighbors', 'index', 'demote', 'promote', 'probe_status'])
+  action: z.enum(ALL_ACTIONS)
     .describe('Which operation to perform.'),
   // BOUNDED AT THE DOOR. `query` was the one free-text field with no length at all, and it is
   // the field every response echoes: campaign B measured a 1 MB query answered with an 8.8 MB
@@ -1378,6 +1386,35 @@ const READ_ACTIONS = new Set([
   'search', 'latest', 'sessions', 'thread', 'verify', 'get', 'neighbors', 'index_status', 'probe_status'
 ]);
 export const ACTION_STRICTNESS = { write: WRITE_ACTIONS, read: READ_ACTIONS };
+
+// ---- the two tool schemas, derived ---------------------------------------------------------
+//
+// Identical to MEMORY_ARGS except for the action enum. Deriving rather than hand-listing means a
+// new action is a compile-time-ish decision: it must appear in WRITE_ACTIONS or READ_ACTIONS to be
+// reachable at all, and CANNOT be quietly reachable from both.
+const argsForActions = (actions, describe) => ({
+  ...MEMORY_ARGS,
+  action: z.enum(ALL_ACTIONS.filter((a) => actions.has(a))).describe(describe)
+});
+
+const READ_ARGS = argsForActions(READ_ACTIONS,
+  'Which read operation to perform. This tool never writes to your memory folder — ' +
+  'use memory_write for import, capture, index, demote and promote.');
+
+const WRITE_ARGS = argsForActions(WRITE_ACTIONS,
+  'Which write operation to perform. These change your memories or their derived state; ' +
+  'reads live on the `memory` tool.');
+
+// A guard the suite can call: the split must be a PARTITION — every action reachable from exactly
+// one tool. An action in neither is unreachable and would fail silently; one in both would make
+// the read tool's readOnlyHint a lie.
+export const ACTION_PARTITION = () => {
+  const read = ALL_ACTIONS.filter((a) => READ_ACTIONS.has(a));
+  const write = ALL_ACTIONS.filter((a) => WRITE_ACTIONS.has(a));
+  const both = read.filter((a) => WRITE_ACTIONS.has(a));
+  const neither = ALL_ACTIONS.filter((a) => !READ_ACTIONS.has(a) && !WRITE_ACTIONS.has(a));
+  return { all: ALL_ACTIONS, read, write, both, neither };
+};
 export const ACCEPTED_ARGS = Object.keys(MEMORY_ARGS);
 
 // Cheap "did you mean" — Levenshtein against the accepted names. A near-miss is the
@@ -1433,8 +1470,7 @@ export function registerMemoryTools(server) {
     } catch { clientCache = null; }
     return clientCache;
   };
-  const registered = server.tool(
-    'memory',
+  const DESCRIPTION =
     'Two-tier hybrid retrieval over Claude\'s persistent memory corpus. ' +
     // 🟥 SAID ONCE, HERE, RATHER THAN ON EVERY RESPONSE. Everything this tool returns is
     // retrieved user content. The corpus is written by an assistant and read by an assistant,
@@ -1552,9 +1588,14 @@ export function registerMemoryTools(server) {
     'this corpus could ever have known. No scope, no ordering and no freshness field fixes that, ' +
     'because the gap is between the corpus and the world, not inside the index. When the answer ' +
     'matters, CHECK THE WORLD: git log, the filesystem, the running process. And a thread that merely ' +
-    'STOPPED reads exactly like one still in progress — silence is not evidence of either.',
-      MEMORY_ARGS,
-    async (args, extra) => {
+    'STOPPED reads exactly like one still in progress — silence is not evidence of either.';
+
+  // ONE DISPATCHER, TWO DOORS. `readOnlyTool` is the only thing that differs between the two
+  // registrations below, and it is not decoration: it rides into beginMcpRequest, where
+  // lib/safe-write.js reads it and refuses. That is what turns readOnlyHint:true from a claim
+  // into a structural fact — a write reached from the read tool cannot complete, whatever the
+  // handler is asked to do.
+  const makeHandler = (readOnlyTool) => async (args, extra) => {
       // THE MCP BOUNDARY. Reached only from index.js via registerMemoryTools, so
       // this is the one place that can honestly claim a query came from a caller
       // rather than from a script or the test suite. Everything else logs
@@ -1568,6 +1609,10 @@ export function registerMemoryTools(server) {
       const queryId = randomUUID().slice(0, 8);
       const client = clientInfo();
       beginMcpRequest({
+        // 🟥 THE MARK lib/safe-write.js READS. Set by the `memory` registration, absent on
+        // `memory_write`. This is the line that makes readOnlyHint:true structural rather than
+        // aspirational: a write reached from the read tool is refused, whatever asked for it.
+        readOnlyTool,
         queryId, action: args.action,
         ...(client ? { client } : {}),
         requestId: extra?.requestId ?? null,
@@ -1621,7 +1666,32 @@ export function registerMemoryTools(server) {
         // the suite's direct handler calls contaminated the log for two days).
         endMcpRequest();
       }
-    }
+    };
+
+  // THE READ TOOL KEEPS THE NAME `memory`, so every existing call keeps working untouched — the
+  // read examples in the README, and every memory in a user's corpus that documents
+  // memory({action:"search"}). Only the five write actions moved.
+  const registered = server.tool(
+    'memory',
+    DESCRIPTION +
+    ' WRITES: none to your memory folder, ever. This tool maintains its own index cache and an ' +
+    'optional local, redacted query log (MEMORY_QUERY_LOG=0 disables it), both under one directory ' +
+    'and both regenerable. Anything that changes your memories is on `memory_write`.',
+    READ_ARGS,
+    makeHandler(true)
+  );
+
+  const registeredWrite = server.tool(
+    'memory_write',
+    'Writes for the persistent memory corpus — the companion to the read-only `memory` tool. ' +
+    'import (bring files in; CREATES new memories and never overwrites an existing one), ' +
+    'capture (write this session\'s exchanges to the staging store), index (rebuild), ' +
+    'demote/promote (move a memory between tiers by rewriting ONE frontmatter field). ' +
+    'There is no delete action. MEMORY_CURATED_READ_ONLY=1 refuses every write to the memory ' +
+    'folder outright. Reads — search, latest, get, neighbors, thread, verify, sessions, ' +
+    'index_status, probe_status — are on `memory`.',
+    WRITE_ARGS,
+    makeHandler(false)
   );
 
   // HALF ONE OF THE UNKNOWN-ARGUMENT FIX (see assertKnownArgs above).
@@ -1652,17 +1722,37 @@ export function registerMemoryTools(server) {
   //     import ARCHIVES the old version with a supersededAt stamp instead of removing it.
   //   openWorldHint FALSE -- a closed set of local files, not an open-ended external system. The
   //     embedding model is fetched once on first index; queries reach nothing off the machine.
+  // 2.0.0: `memory` declares readOnlyHint TRUE because it carries only the nine read actions AND
+  // because lib/safe-write.js refuses on the readOnlyTool mark this registration sets — structural,
+  // not a promise. Until 2.0.0 one tool held both halves and had to declare the worst thing in the
+  // box: recall lost the no-prompt path, and a corpus of other people's text sat one action away
+  // from inducing a write.
   if (registered) {
     registered.annotations = {
       title: 'Memory',
-      readOnlyHint: false,
+      readOnlyHint: true,
       destructiveHint: false,
       openWorldHint: false
     };
   }
+  // destructiveHint TRUE is deliberately conservative rather than literal: there is no delete
+  // action, writeNewMemoryFile refuses an existing name, frontmatter edits snapshot the previous
+  // bytes first, and a replacing import ARCHIVES the old version with a supersededAt stamp instead
+  // of removing it. "Always ask" is still the right default for the door that can add to someone's
+  // notes.
+  if (registeredWrite) {
+    registeredWrite.annotations = {
+      title: 'Memory (write)',
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: false
+    };
+  }
 
-  if (registered && registered.inputSchema && typeof registered.inputSchema.passthrough === 'function') {
-    registered.inputSchema = registered.inputSchema.passthrough();
+  for (const t of [registered, registeredWrite]) {
+    if (t && t.inputSchema && typeof t.inputSchema.passthrough === 'function') {
+      t.inputSchema = t.inputSchema.passthrough();
+    }
   }
   return registered;
 }

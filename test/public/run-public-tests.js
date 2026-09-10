@@ -82,7 +82,13 @@ function run(env, body, { cwd = ROOT } = {}) {
     const memoryTool = async () => {
       const m = await import(TOOL); const c = new Map();
       m.registerMemoryTools({ tool: (n, d, s, h) => c.set(n, h) });
-      return async (args) => { const r = await c.get('memory')(args); return JSON.parse(r.content[0].text); };
+      // 2.0.0 — TWO tools. Routing by action here keeps every existing check's call shape, so
+      // this shim is the only place in the harness that knows the split.
+      const W = new Set(['import', 'capture', 'index', 'demote', 'promote']);
+      return async (args) => {
+        const r = await c.get(W.has(args.action) ? 'memory_write' : 'memory')(args);
+        return JSON.parse(r.content[0].text);
+      };
     };
     ${body}`;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', src],
@@ -1613,7 +1619,8 @@ group("(a98) the scope:'all' envelope — an empty corpus, one copy of the rows,
     await buildIndex({ force: true, dir: cfg.rootsForCorpus('staging'), out: cfg.stagingIndexPath() });
     const m = await import(TOOL); const c = new Map();
     m.registerMemoryTools({ tool: (n, d, s, h) => c.set(n, h) });
-    const call = async (args) => { const x = await c.get('memory')(args); return { text: x.content[0].text, body: JSON.parse(x.content[0].text) }; };
+    const W2 = new Set(['import', 'capture', 'index', 'demote', 'promote']);   // 2.0.0: route by action
+    const call = async (args) => { const x = await c.get(W2.has(args.action) ? 'memory_write' : 'memory')(args); return { text: x.content[0].text, body: JSON.parse(x.content[0].text) }; };
     const all   = await call({ action: 'search', query: ${JSON.stringify(Q)}, scope: 'all', limit: 5 });
     const g = all.body.groups || {};
     const refScope = Object.entries(g).find(([, x]) => x.resultsRef === 'results')?.[0] || null;

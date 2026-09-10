@@ -234,7 +234,10 @@ if (corpus === 'gold') {
 const memory = await import('../tools/memory.js');
 const registry = new Map();
 memory.registerMemoryTools({ tool: (n, d, s, h) => registry.set(n, h) });
-const handler = registry.get('memory');
+// 2.0.0 — the snapshot drives READ actions, so it uses the read tool. Routing by action anyway
+// keeps it correct if a write query is ever added to the list.
+const WRITE_ACTIONS_SNAP = new Set(['import', 'capture', 'index', 'demote', 'promote']);
+const handler = (args) => registry.get(WRITE_ACTIONS_SNAP.has(args.action) ? 'memory_write' : 'memory')(args);
 
 const responses = {}, queryText = {};
 for (const q of QUERIES) {
