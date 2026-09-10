@@ -13,7 +13,7 @@ not contain what you asked for.
 "mcpServers": {
   "memory": {
     "command": "npx",
-    "args": ["-y", "agentic-recall"],
+    "args": ["-y", "agentic-recall@2"],
     "env": { "MEMORY_DIR": "/absolute/path/to/your/memory/folder" }
   }
 }
@@ -22,6 +22,16 @@ not contain what you asked for.
 That is the whole install. `MEMORY_DIR` is the one path you supply, and that is deliberate:
 the server does **not** go looking through your disk for your notes.
 
+> **🟥 Note the `@2` — pin the major version.** `npx -y agentic-recall` with no version asks npm for
+> whatever is tagged `latest` **every time its cache is cold**, so a new major arrives silently and
+> a config that worked yesterday breaks today. That is not hypothetical: 2.0.0 moved five actions to
+> a second tool, and a tester's in-flight session started failing with
+> `received 'index' at action` mid-task — because npx had re-resolved `latest` underneath a running
+> workflow. The cache is what makes an unpinned spec *feel* stable, and a cache is not a pin: it is
+> cleared by `npm cache verify`, by disk cleanup, and by every new machine.
+>
+> `@2` takes fixes and features, never a breaking major. `agentic-recall@2.0.0` pins exactly.
+
 > **🟥 Windows users: use this config instead.** Bare `npx` does not work for a Node MCP client
 > on Windows. This is measured, not inferred — CI spawns the published package on `windows-latest`
 > every push, and reports `bare npx -> FAILED: spawn npx ENOENT` while `cmd /c npx` connects:
@@ -29,7 +39,7 @@ the server does **not** go looking through your disk for your notes.
 > ```json
 > "memory": {
 >   "command": "cmd",
->   "args": ["/c", "npx", "-y", "agentic-recall"],
+>   "args": ["/c", "npx", "-y", "agentic-recall@2"],
 >   "env": { "MEMORY_DIR": "C:/Users/<you>/Documents/memories" }
 > }
 > ```
@@ -55,7 +65,7 @@ the server does **not** go looking through your disk for your notes.
 > ```powershell
 > Remove-Item -Recurse -Force "$env:LOCALAPPDATA\npm-cache\_npx" -ErrorAction SilentlyContinue
 > npm cache verify
-> npx -y agentic-recall --version
+> npx -y agentic-recall@2 --version
 > ```
 >
 > If it still fails, two alternatives that avoid npx entirely — both verified end to end:
@@ -274,7 +284,7 @@ zips also shipped a `dist/` install guide that said the opposite; it is gone.)
 the top of this README into your Claude config and you are done.
 
 ```bash
-npx -y agentic-recall --version     # optional: fetch it now rather than on first launch
+npx -y agentic-recall@2 --version     # optional: fetch it now rather than on first launch
 ```
 
 **From source**, if you would rather read it first or run the suite:
@@ -1399,7 +1409,7 @@ directory of files.
   "mcpServers": {
     "memory": {
       "command": "npx",
-      "args": ["-y", "agentic-recall"]
+      "args": ["-y", "agentic-recall@2"]
     }
   }
 }
@@ -1428,7 +1438,7 @@ discarded one.
 
 ### Claude Code
 ```bash
-claude mcp add memory --scope user -- npx -y agentic-recall
+claude mcp add memory --scope user -- npx -y agentic-recall@2
 ```
 Existing Claude Code sessions pick it up on the **next** session, not the
 current one.

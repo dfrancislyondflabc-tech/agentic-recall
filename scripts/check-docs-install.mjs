@@ -52,11 +52,22 @@ for (const m of CODE.matchAll(/"command"\s*:\s*"npx"[\s\S]{0,120}?"args"\s*:\s*\
   for (const a of m[1].matchAll(/"([^"]+)"/g)) if (a[1] !== '-y') { pkgs.add(a[1]); break; }
 }
 
-for (const pkg of pkgs) {
+// 🟥 STRIP THE VERSION SPEC BEFORE ASKING THE REGISTRY. The README pins `agentic-recall@2` (see
+// the note there: an unpinned npx spec hands every user the next breaking major the moment its
+// cache goes cold). The registry has no package NAMED "agentic-recall@2", so querying the raw spec
+// 404s and this gate failed a correct README. A leading @ is a SCOPE and must survive; only a
+// version suffix is removed.
+const bare = (spec) => {
+  const at = spec.lastIndexOf('@');
+  return at > 0 ? spec.slice(0, at) : spec;
+};
+
+for (const spec of pkgs) {
+  const pkg = bare(spec);
   const status = await head(`https://registry.npmjs.org/${pkg.replace('/', '%2F')}`);
-  if (status === 200) notes.push(`npm package ${pkg} — published, install instruction is live`);
+  if (status === 200) notes.push(`npm package ${spec} — published, install instruction is live`);
   else failures.push(
-    `README tells a reader to install "${pkg}" from npm, but the registry answers ${status}.\n` +
+    `README tells a reader to install "${spec}" from npm, but the registry answers ${status}.\n` +
     `      Either publish it, or stop advertising it until you do.`);
 }
 

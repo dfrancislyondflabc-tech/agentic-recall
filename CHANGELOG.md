@@ -10,6 +10,27 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [2.0.1] — 2026-09-10
+
+### Fixed
+
+- **🟥 The README's own config had no version pin**, so `npx -y agentic-recall` handed every user
+  the next breaking major the moment its npx cache went cold. Publishing 2.0.0 did exactly that to a
+  tester mid-session: a call that had worked all day started failing with `received 'index' at
+  action`, because `index` had moved to `memory_write` underneath a running workflow. Nothing
+  auto-updated — an unpinned spec asks npm for `latest` every time it resolves, and the cache is
+  what makes that *feel* stable. A cache is not a pin: `npm cache verify`, disk cleanup and a new
+  machine all clear it.
+
+  Every config and command in the README now pins `agentic-recall@2` — fixes and features, never a
+  surprise major — with a note explaining why and how to pin exactly.
+
+  Found by a tester experiencing the failure, not by any check here.
+
+- `check-docs-install.mjs` treated `agentic-recall@2` as a package *name* and 404'd on a correct
+  README. It now strips a version suffix before querying the registry, while preserving a leading
+  `@scope`. Mutation-tested: an unpublished package still fails it.
+
 ## [2.0.0] — 2026-09-10
 
 Verified on macOS, Linux and Windows against Node 20, 22 and 24, from a checkout; and installed
@@ -1514,6 +1535,7 @@ Notable behaviour, since there is no earlier entry to diff against:
 - **Windows correctness**: UTF-8 BOMs and CRLF line endings in frontmatter and bodies are handled.
 - **Every query is logged locally** for measurement (`MEMORY_QUERY_LOG`, `0` disables).
 
+[2.0.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.0.1
 [2.0.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.0.0
 [1.8.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.2
 [1.8.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.1
