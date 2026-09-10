@@ -18,7 +18,7 @@
 // Each case carries a NEGATIVE CONTROL: the same tree with the one deciding fact removed. A test
 // that passes both with and without the behaviour is not evidence of anything.
 
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, realpathSync, cpSync, symlinkSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +33,7 @@ const REPO = realpathSync(dirname(dirname(HERE)));
 function askResolver(codeDir, env = {}) {
   mkdirSync(join(codeDir, 'lib'), { recursive: true });
   copyFileSync(join(REPO, 'lib', 'state-root.js'), join(codeDir, 'lib', 'state-root.js'));
+  // MEMORY_DIR now shapes the answer (per-corpus roots), so it must be passed through, not dropped.
   const script =
     `import('file://${join(codeDir, 'lib', 'state-root.js').replace(/\\/g, '/')}')` +
     `.then(m => process.stdout.write(m.stateRoot()))`;
@@ -137,6 +138,66 @@ export async function stateRootTests({ check, group }) {
         out.secrets === join(REPO, 'secrets-exclude.json'), `got ${out.secrets}`);
       check('(sr8) [control] ...while written state (the index) follows the STATE root',
         out.index === join(stateElsewhere, '.memory-index.json'), `got ${out.index}`);
+    }
+
+    // ---- 🟥 ONE CORPUS PER STATE DIRECTORY. 2.0.0 sent every package install to a single
+    // ~/.agentic-recall, so two memory folders on one machine shared one index and clobbered each
+    // other — reproduced: index corpus A, then corpus B, and A's documents are gone. It was a
+    // REGRESSION introduced by this very file: before it, state lived beside the code, so a second
+    // checkout was automatically a second state directory. Centralising the root removed that
+    // accidental isolation without replacing it. Found by a tester indexing two corpora, not here.
+    {
+      const pkg = join(tmp, 'npxcache', '_npx', 'abc', 'node_modules', 'agentic-recall');
+      mkdirSync(pkg, { recursive: true });
+      // 🟥 THE WHOLE lib/, not just state-root.js. modelCacheDir() lives in config.js, and asking
+      // the REPO's copy answers about a CHECKOUT — where the per-corpus split does not engage and
+      // both roots coincide, so a mutation making the model per-corpus is invisible. It has to run
+      // from a package-shaped path to be tested at all. node_modules is symlinked so config.js can
+      // still resolve its own dependencies.
+      cpSync(join(REPO, 'lib'), join(pkg, 'lib'), { recursive: true });
+      copyFileSync(join(REPO, 'package.json'), join(pkg, 'package.json'));
+      try { symlinkSync(join(REPO, 'node_modules'), join(pkg, 'node_modules'), 'dir'); } catch { /* already there */ }
+      const a = join(tmp, 'corpus-a'), b = join(tmp, 'corpus-b');
+      mkdirSync(a, { recursive: true }); mkdirSync(b, { recursive: true });
+
+      const rootFor = (dir) => askResolver(pkg, { ...homeEnv, MEMORY_DIR: dir });
+      const ra = rootFor(a), rb = rootFor(b);
+
+      check('(sr9) two corpora get DIFFERENT state roots', ra !== rb, `both -> ${ra}`);
+      check('(sr9) ...both under ~/.agentic-recall',
+        ra.startsWith(join(fakeHome, '.agentic-recall')) && rb.startsWith(join(fakeHome, '.agentic-recall')),
+        `${ra} | ${rb}`);
+      check('(sr9) ...and the directory name identifies the corpus by eye',
+        /corpus-a-[0-9a-f]{8}$/.test(ra) && /corpus-b-[0-9a-f]{8}$/.test(rb), `${ra} | ${rb}`);
+      check('(sr9) STABLE — the same corpus resolves to the same root twice',
+        rootFor(a) === ra, 'a second call moved the root');
+
+      // Two folders with the SAME basename in different places must not collide either.
+      const nested1 = join(tmp, 'p1', 'memory'), nested2 = join(tmp, 'p2', 'memory');
+      mkdirSync(nested1, { recursive: true }); mkdirSync(nested2, { recursive: true });
+      check('(sr9) same folder NAME in different places still separates',
+        rootFor(nested1) !== rootFor(nested2), rootFor(nested1));
+
+      // 🟥 THE MODEL STAYS SHARED. ~33 MB, identical for every corpus. Per-corpus would re-download
+      // it for each memory folder — paying 33 MB for isolation that buys nothing.
+      // 🟥 ASK config.modelCacheDir(), NOT sharedRoot(). A mutation that made the model cache
+      // per-corpus SURVIVED the first version of this check, because the check called sharedRoot()
+      // — which the mutation never touched. The function under test is the one that decides where
+      // the model actually lands.
+      const modelFor = (dir) => {
+        const script =
+          `import('file://${join(pkg, 'lib', 'config.js').replace(/\\/g, '/')}')` +
+          `.then(m => process.stdout.write(m.modelCacheDir()))`;
+        return execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+          encoding: 'utf8',
+          env: { ...process.env, ...homeEnv, MEMORY_DIR: dir, MEMORY_ROOT: '', MEMORY_MODEL_CACHE: '' }
+        }).trim();
+      };
+      const ma = modelFor(a), mb = modelFor(b);
+      check('(sr9) 🟥 the MODEL CACHE is the same directory for both corpora', ma === mb, `${ma} | ${mb}`);
+      check('(sr9) [control] ...and it does NOT sit inside either per-corpus root',
+        !ma.startsWith(ra + '/') && !ma.startsWith(rb + '/'),
+        `model ${ma} is inside a corpus root — it would be re-downloaded per corpus`);
     }
 
     // ---- The real repo, resolved by the real import: this checkout must be unaffected.

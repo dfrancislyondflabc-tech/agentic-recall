@@ -14,6 +14,27 @@ be checkable.
 
 ### Fixed
 
+- **🟥 Two corpora on one machine shared one index and clobbered each other.** 2.0.0 sent every
+  package install to a single `~/.agentic-recall`, so pointing the server at a second memory folder
+  overwrote the first's index, vector cache and store. Reproduced exactly: index corpus A, then
+  corpus B, and A's documents are gone from the index. The server *detected* it — the vanish report
+  names what disappeared — but nothing prevented it, and no documentation mentioned `MEMORY_ROOT`.
+
+  **This was a regression introduced by 1.8.0's `lib/state-root.js`.** Before it, state lived beside
+  the code, so a second checkout was automatically a second state directory. Centralising the root
+  removed that accidental isolation without replacing it.
+
+  State now lives at `~/.agentic-recall/<folder-name>-<hash>/`, one directory per corpus, derived
+  from the absolute `MEMORY_DIR`. Two folders with the same name in different places stay separate.
+  **The embedding model stays shared** at `~/.agentic-recall/.model-cache` — ~33 MB, identical for
+  every corpus, and duplicating it would pay real disk for isolation that buys nothing.
+
+  **Upgrading from 2.0.0:** your index rebuilds once, in its new per-corpus directory. The model
+  cache is untouched, so there is no 33 MB re-download. Nothing is deleted; the old flat files are
+  simply no longer read, and can be removed by hand.
+
+  Found by a tester indexing two corpora on one machine, not by any check here.
+
 - **🟥 The README's own config had no version pin**, so `npx -y agentic-recall` handed every user
   the next breaking major the moment its npx cache went cold. Publishing 2.0.0 did exactly that to a
   tester mid-session: a call that had worked all day started failing with `received 'index' at
