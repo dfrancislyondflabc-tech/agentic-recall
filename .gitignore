@@ -102,3 +102,8 @@ dist/.capture-staging.*
 # would be a list of what they actually search for. `--corpus gold` produces the committed
 # baseline (test/ranking-snapshot-gold.json); anything live stays here.
 test/ranking-snapshot-live*.json
+
+# Build provenance, GENERATED at pack time by scripts/stamp-build.mjs from this repo HEAD.
+# It was previously TRACKED, and carried a sha from the private repo that does not exist here —
+# so the container told users a commit they could not look up. Never commit it again.
+.build-stamp.json

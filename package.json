@@ -21,7 +21,8 @@
     "local-config.example.json",
     "CHANGELOG.md",
     "PRIVACY.md",
-    "MEMORY-SAFETY.md"
+    "MEMORY-SAFETY.md",
+    ".build-stamp.json"
   ],
   "scripts": {
     "start": "node index.js",
@@ -45,7 +46,9 @@
     "test:stdio": "node scripts/verify-stdio.js",
     "check:docs": "node scripts/check-docs-install.mjs",
     "check:claims": "node scripts/check-claims.mjs",
-    "release:notes": "node scripts/release-notes.mjs"
+    "release:notes": "node scripts/release-notes.mjs",
+    "stamp": "node scripts/stamp-build.mjs",
+    "prepack": "node scripts/stamp-build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

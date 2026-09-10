@@ -1,5 +1,11 @@
-node_modules
+# 🟥 .git is excluded ON PURPOSE and the container depends on it: node:22-slim has no git binary,
+# so lib/version.js falls back to .build-stamp.json, which scripts/stamp-build.mjs generates at
+# pack time from this repo's HEAD.
 .git
+node_modules
+
+# State the server writes. Every one of these mirrors corpus text (see .gitignore for the full
+# reasoning on each); none of them belongs in an image.
 store
 .memory-index.json
 .staging-index.json
@@ -10,5 +16,11 @@ store
 .query-log*.jsonl
 .margin-history.jsonl
 .model-cache
+.vanish-report.jsonl
+.probe-results.json
+.runtime-cache
+local-config.json
+
+# Build outputs that would otherwise be copied into the image.
 *.zip
 *.mcpb
