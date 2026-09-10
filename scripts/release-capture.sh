@@ -46,6 +46,17 @@ rm -rf "$STAGE"; mkdir -p "$STAGE"
 rsync -a --delete --exclude '.DS_Store' "$REPO/scripts/" "$STAGE/scripts/"
 rsync -a --delete --exclude '.DS_Store' "$REPO/lib/" "$STAGE/lib/"
 cp "$REPO/package.json" "$STAGE/package.json"
+
+# 🟥 secrets-exclude.json MUST travel with the code, not be left behind.
+# lib/config.js secretsConfigPath() resolves it against CODE_ROOT — the directory the running
+# script lives in. While dist/capture sat INSIDE the repo that root still found the repo's copy,
+# so the omission was invisible. Move the released copy anywhere else (a second checkout, a
+# different machine) and every capture run dies with
+#     secrets-exclude.json unreadable — refusing to index (fail closed)
+# Measured 2026-09-10 the moment the capture copy was released from a different tree. Failing
+# closed is right; shipping the code without its redaction rules is not.
+# MEMORY_SECRETS_CONFIG still overrides, for a caller who wants a different denylist.
+cp "$REPO/secrets-exclude.json" "$STAGE/secrets-exclude.json"
 ln -s "$REPO/node_modules" "$STAGE/node_modules"
 printf 'version=%s\nsha=%s\nreleased=%s\nforce=%s\n' "$VER" "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$FORCE" > "$STAGE/RELEASE"
 
