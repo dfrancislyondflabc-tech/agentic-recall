@@ -77,5 +77,12 @@ mkdir -p "$REPO/dist"
 if [ -d "$DIST" ]; then mv "$DIST" "$DIST.prev.$$"; fi
 mv "$STAGE" "$DIST"
 rm -rf "$DIST.prev.$$"
+# 🟥 A RELEASED COPY THAT CANNOT REDACT MUST NOT BE PUBLISHED. The cp above is the fix; this is
+# the check that it happened, because the failure it prevents is silent until the next capture run
+# dies — and on 2026-09-10 that was a live machine's capture pipeline, stopped for 20 minutes.
+if [ ! -f "$DIST/secrets-exclude.json" ]; then
+  echo "refusing: the released copy has no secrets-exclude.json — every capture run would fail closed" >&2
+  exit 3
+fi
 echo "released capture code $VER@$SHA -> $DIST"
 cat "$DIST/RELEASE"
