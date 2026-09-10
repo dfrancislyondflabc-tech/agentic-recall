@@ -1092,6 +1092,16 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 {
+  const { readToolCannotWriteTests } = await import('./read-tool-cannot-write.mjs');
+  await readToolCannotWriteTests({ check, group });
+}
+
+{
+  const { dreamWritesNowhereTests } = await import('./dream-writes-nowhere.mjs');
+  await dreamWritesNowhereTests({ check, group });
+}
+
+{
   const { cliFlagsTests } = await import('./cli-flags.mjs');
   await cliFlagsTests({ check, group });
 }

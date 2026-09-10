@@ -5,9 +5,19 @@
 //
 //   node scripts/dream.js [--apply] [--force] [--limit N]
 //
-// Default is a dry report. --apply performs ONLY the two mechanical, reversible
-// operations (stamp curatedHash, demote a superseded doc). It never deletes,
-// never edits a body, and never removes a credential on its own.
+// Default is a dry report. --apply performs ONE mechanical, reversible operation: it stamps
+// curatedHash — "I have already scored this document at this content hash" — INTO ITS OWN STATE
+// FILE, .dream-state.json, under ownStoreDir(). It never deletes, never edits a body, and never
+// removes a credential on its own.
+//
+// 🟥 THIS COMMENT USED TO SAY "stamp curatedHash, demote a superseded doc", which read as though
+// both were writes into the memory files. Neither is. The stamp goes to the sidecar above, and
+// demotion is QUEUED for a human, never applied here ("left queued for judgement"). The stale
+// wording cost a reading session an afternoon: it concluded dream bypassed
+// MEMORY_CURATED_READ_ONLY and was therefore a shipped safety defect. It is not — dream writes
+// nothing into the memory folder at all, which the (dream) checks in the public suite now pin by
+// checksumming every memory file across an --apply run. A comment that describes a write the code
+// does not make is worse than no comment: it is a bug report that reproduces only in the reader.
 //
 // ── THE GATE ───────────────────────────────────────────────────────────────
 // Conjunctive, not periodic: fire on ACCUMULATED SIGNAL, not the clock, so a

@@ -320,7 +320,7 @@ node scripts/import-memories.js /absolute/path/to/export.zip --dry   # preview
 node scripts/import-memories.js /absolute/path/to/export.zip
 ```
 
-This one *does* write files into `MEMORY_DIR`, converting as it goes. `memory({action: "import"})`
+This one *does* write files into `MEMORY_DIR`, converting as it goes. `memory_write({action: "import"})`
 is the same thing from inside a conversation.
 
 **Remembering the conversations themselves is controlled by the connector toggle**, and there is
@@ -354,8 +354,8 @@ lost — the transcript was on disk the whole time, it simply was not ingested. 
 fact:
 
 ```
-memory({action: "capture", sinceMinutes: 60})   // remember the last hour
-memory({action: "capture"})                     // remember this whole session
+memory_write({action: "capture", sinceMinutes: 60})   // remember the last hour
+memory_write({action: "capture"})                     // remember this whole session
 ```
 
 Already-captured exchanges are skipped, so running it twice is safe. It answers with two counts,
@@ -661,7 +661,7 @@ The `[[wikilink]]` graph, free relevance expansion:
 - `unresolvedLinks` — `[[slugs]]` with no matching file
 - `semantic` — top-3 nearest by cosine, which surfaces relatives nobody linked
 
-### `memory({action: "demote", name})` / `memory({action: "promote", name})`
+### `memory_write({action: "demote", name})` / `memory_write({action: "promote", name})`
 Two-tier mechanics. `demote` sets `metadata.tier: archive` in the file's
 frontmatter, creating a frontmatter block if the file has none. `promote`
 removes the line.
@@ -711,7 +711,7 @@ Slicing happens **after** the secrets scrub, so paging cannot reassemble a remov
 > `## MASTER PRE-SHIP GATES` returned **426 chars instead of 26,785** — it ended at the first shell
 > comment. The outline went 94 → 50 headings, level-1 count 94 → 1.
 
-### `memory({action: "import", path, dry?, domain?, name?, category?, replace?})`
+### `memory_write({action: "import", path, dry?, domain?, name?, category?, replace?})`
 
 Point it at an **absolute path** — a file, a folder, or a ChatGPT export — and it brings those
 memories in. Eighteen formats, no new dependencies:
@@ -769,7 +769,7 @@ elsewhere) and what each converter actually is on this machine.
 > other two signals. A response may not make a claim it cannot back, so the tenses are now separate
 > fields and no field is true of both a dry run and a real import.
 >
-> **Why a write refuses an unknown argument.** `memory({action:'import', path, dryRun:true})` — a
+> **Why a write refuses an unknown argument.** `memory_write({action: 'import', path, dryRun:true})` — a
 > typo for `dry` — **imported for real**: the tool is registered with a plain object schema and zod
 > strips unknown keys, so the flag was deleted before the handler ran (measured: `written=2`,
 > `dry=false`, curated 19 → 21). The schema now passes unknown keys through so the handler can see
@@ -806,14 +806,14 @@ Advice now resolves in three layers, most authoritative first:
 > 0–0.017, code 0.117–0.43. Re-derived on the principle rather than the example: **8/8**.
 > `test/domain-corpora.json` pins all eight.
 
-### `memory({action: "index"})` returns a job
+### `memory_write({action: "index"})` returns a job
 
 Indexing runs **off** the request. It used to `await buildIndex` inline — ~73 s for curated, minutes
 for staging — so the stale warning told callers to run `index` and running it returned
 `Error: Request timed out`. A tool must never recommend an action it cannot itself complete.
 
 ```
-memory({action: "index"})                        -> { started: true, jobId }   (~675 ms)
+memory_write({action: "index"})                        -> { started: true, jobId }   (~675 ms)
 memory({action: "index_status", jobId})          -> { state, indexes, skipped }
 ```
 
@@ -992,7 +992,7 @@ Zero configuration. A session run from another project writes
    for a 15-document project. Over that bound the search is answered and stamped
    `indexStale` with the sentence saying what to run. (Curated at 122 files and
    staging at 2,100 are both far over the bound, so their behaviour is unchanged.)
-3. `memory({action: "index"})` rebuilds it by default (`curated` + `projects` +
+3. `memory_write({action: "index"})` rebuilds it by default (`curated` + `projects` +
    `handoff` — the three hand-edited corpora; staging stays opt-in).
 4. The router widens, so the new memories are reachable with no scope argument.
 5. `scripts/auto-ingest.js` rebuilds `rootsForCorpus('staging')`, which no longer
@@ -1027,7 +1027,7 @@ even touch work retrieval unless a search names it. Both halves are enforced:
   (work + every category). Unknown scope names error, listing what exists.
 * **Read-only** (`doTier` refuses; import's own fs path is the sole writer),
   **archive tier**, **never rebuilt inline** (a changed book is a full re-embed;
-  rebuild with `memory({action:"index", scope:"<category>"})`).
+  rebuild with `memory_write({action: "index", scope:"<category>"})`).
 * **Import routes and refuses.** `import` with `category:'books'` files into the
   category (created on demand). Anything over 200 KB of text, or book-shaped
   (PDF), **without** a category is refused before any write — the accident this
@@ -1163,7 +1163,7 @@ and files sort into the same order before and after):
 ```
 npm run migrate:names            # dry run — prints the plan and every pre-check, writes nothing
 npm run migrate:names -- --apply # renames, rewrites name: and Previous:, verifies, refuses on any failure
-memory({action: "index", scope: "staging"})   # then rebuild the staging index
+memory_write({action: "index", scope: "staging"})   # then rebuild the staging index
 ```
 
 Back up your `store/` first — it is gitignored, so that copy is the only one. The migration refuses
@@ -1433,6 +1433,34 @@ claude mcp add memory --scope user -- npx -y agentic-recall
 Existing Claude Code sessions pick it up on the **next** session, not the
 current one.
 
+### 🟥 Capture needs Claude Code's transcripts — retrieval does not
+
+**Retrieval works everywhere.** Point `MEMORY_DIR` at any folder of markdown and search, absence
+verdicts, `latest`, `get` and the git-verification layer all work — with any MCP client, on any
+platform. That is the whole product as far as *searching* goes, and it depends on nothing but your
+files.
+
+**Capture is narrower, and it is worth knowing before you rely on it.** It has nothing to do with
+Claude's own memory feature — it reads the `.jsonl` **transcript** files Claude Code writes for
+every session automatically (the same ones `--resume` and `--continue` use). No opt-in, no setting.
+But only Claude Code writes them where this looks:
+
+| client | retrieval | capture |
+|---|---|---|
+| **Claude Code** (CLI or the Code tab) | ✅ | ✅ transcripts always written to `~/.claude/projects/` |
+| **Claude Desktop — agent mode** | ✅ | ⚠️ transcripts exist, but nested under Desktop's own directory — point `MEMORY_TRANSCRIPT_DIR` at them |
+| **Claude Desktop — ordinary chat** | ✅ | ❌ **nothing to read** |
+| any other MCP client | ✅ | ❌ |
+
+**Why Desktop chat cannot be captured:** those conversations are not written to disk as transcripts
+at all. Measured on macOS — Desktop's entire local storage is a few hundred KB of browser state,
+far too small to hold chat history, and the only `.jsonl` files under its application-support
+directory belong to agent-mode sessions. The conversations live in your account, not on the disk
+this server can read.
+
+So if you install this on Claude Desktop and expect your chats to start appearing in `staging`,
+they will not, and nothing will tell you so. Retrieval over the notes you write is unaffected.
+
 ### That is the whole of capture setup
 
 **A loaded server keeps time.** While the connector is switched on, the server spawns a capture
@@ -1658,7 +1686,7 @@ Nothing here is a hard limit; they are the numbers, so you can decide.
 | `MEMORY_MODEL_CACHE` | `./.model-cache` |
 | `MEMORY_INLINE_REINDEX` | `1` — `0` keeps the staleness check and the stamp, drops the inline rebuild |
 | `MEMORY_AUTO_INGEST` | *(unset)* — `0` never captures a session, `always`/`1` always does. Unset means "capture the sessions the connector was on for". **A hook inherits no environment**, so for a permanent setting use `local-config.json` (`autoIngest` / `captureAlways`); this var is for a one-off manual run |
-| `MEMORY_INGEST_SINCE_MINUTES` | *(unset)* — limit a capture to the last N minutes. Set for you by `memory({action:"capture", sinceMinutes})`. The window is measured against each exchange's **last activity**, not the moment its question was asked, so a turn that has been running longer than the window is still inside it |
+| `MEMORY_INGEST_SINCE_MINUTES` | *(unset)* — limit a capture to the last N minutes. Set for you by `memory_write({action: "capture", sinceMinutes})`. The window is measured against each exchange's **last activity**, not the moment its question was asked, so a turn that has been running longer than the window is still inside it |
 | `MEMORY_INFLIGHT_QUIET_MIN` | `10` — minutes of transcript silence after which a **timed** walk captures the in-flight exchange instead of deferring it (`0` never defers, `off` always does). Only reached when the last assistant record does not carry `stop_reason: end_turn`/`stop_sequence`; a turn that says it stopped is captured on the next tick regardless. The hook never defers, whatever this says |
 | `MEMORY_SECRETS_CONFIG` | `./secrets-exclude.json` — point at a different denylist. Used by the self-test so it can supply its own rather than depend on yours |
 | `MEMORY_PROBE_RESULTS` | `./.probe-results.json` — the probe sidecar. It is **per install, not per corpus**, so set this per corpus if two corpora share one checkout |
@@ -1728,4 +1756,4 @@ nothing apart — and it is loaded into context every session.
 
 Changing the setting changes the corpus hash, so the index is detected stale automatically. A full
 rebuild is not an inline one, so the first search after switching may report `indexStale` and ask
-for `memory({action:"index"})`.
+for `memory_write({action: "index"})`.
