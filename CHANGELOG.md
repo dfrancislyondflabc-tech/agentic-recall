@@ -14,6 +14,25 @@ be checkable.
 
 ### Fixed
 
+- **🟥 `MEMORY_DIR` silently suppressed the entire handoff corpus** — including when
+  `MEMORY_HANDOFF_DIRS` named its directories outright. `memoryRoots()` dropped every handoff root
+  on a bare `if (!process.env.MEMORY_DIR)`, so the two variables were mutually exclusive and the
+  project's own import instructions told people to set both. Symptoms, all quiet: `index` reported
+  `skipped: no roots for that corpus`, and `scope:'handoff'` searches returned nothing.
+
+  This is the same class as MEM-32, already fixed for the library corpus eight lines away in the
+  same function — an explicit directory is a deliberate act, not a sweep, and opts back in. Handoff
+  never got the same treatment. The rule now lives in `handoffSuppressedReason()`, mirroring
+  `librarySuppressedReason()`, so `index`, `search` and the freshness check cannot disagree with
+  each other about whether the corpus exists.
+
+  A bare `MEMORY_DIR` still suppresses discovered handoff directories — that is what keeps a test
+  fixture measuring its own corpus — and `MEMORY_HANDOFF_DIRS=0` / `MEMORY_HANDOFF_DOCS=0` still
+  switch the corpus off. Only the opt-in changed.
+
+  Found by a tester importing a 3,360-document corpus onto a second machine: 17 handoff documents
+  indexed nowhere. Retrieval is unchanged — a 46-query ranking snapshot is byte-identical.
+
 - **🟥 Two corpora on one machine shared one index and clobbered each other.** 2.0.0 sent every
   package install to a single `~/.agentic-recall`, so pointing the server at a second memory folder
   overwrote the first's index, vector cache and store. Reproduced exactly: index corpus A, then

@@ -1112,6 +1112,11 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 {
+  const { handoffReachableTests } = await import('./handoff-reachable.mjs');
+  await handoffReachableTests({ check, group });
+}
+
+{
   const { schedulerE2E } = await import('./scheduler-e2e.mjs');
   await schedulerE2E({ check, group });
 }

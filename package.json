@@ -31,7 +31,7 @@
     "analyse-queries": "node scripts/analyse-query-log.js",
     "commit-memories": "node scripts/commit-memories.js --verbose",
     "memories-status": "node scripts/commit-memories.js --status",
-    "check:release": "node scripts/check-release-clean.mjs && node scripts/check-docs-install.mjs && node scripts/check-claims.mjs",
+    "check:release": "node scripts/check-release-clean.mjs && node scripts/check-state-gitignored.mjs && node scripts/check-docs-install.mjs && node scripts/check-claims.mjs",
     "capture": "node scripts/timed-capture.mjs",
     "release:capture": "zsh scripts/release-capture.sh",
     "install:capture-hooks": "zsh scripts/install-capture-hooks.sh",

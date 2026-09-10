@@ -86,6 +86,14 @@ local-config.json
 dist/capture/
 dist/.capture-staging.*
 
+# The vanish report (lib/index-store.js): one JSON line each time an index build found FEWER
+# documents than the last one, naming what disappeared. It therefore carries corpus document names
+# AND the absolute path of the index — i.e. the author's home directory. 🟥 It was the one state
+# file missing from this list, and a `git add` duly committed it to a PUBLIC repo (8c2f36d); the
+# release gate caught it on the next run. Regenerable, machine-local, never to a remote.
+.vanish-report.jsonl
+*.vanish-report.jsonl
+
 # Snapshots taken before any frontmatter edit (lib/safe-write.js). Regenerable, machine-local,
 # and the suite creates them inside test fixtures when it exercises setTier/setModified.
 .memory-snapshots/
