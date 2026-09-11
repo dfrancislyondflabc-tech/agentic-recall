@@ -43,6 +43,15 @@ const displayVersion = () => {
     console.log(displayVersion());
     process.exit(0);
   }
+  // --doctor: what does this configuration actually resolve to? Read-only, no network, exits
+  // before the server starts — the point is to answer questions about a server that may not be
+  // starting correctly, so it must not depend on one.
+  if (has('--doctor')) {
+    const { doctorReport } = await import('./lib/doctor.js');
+    console.log(doctorReport());
+    process.exit(0);
+  }
+
   if (has('-h', '--help')) {
     console.log([
       `agentic-recall ${displayVersion()} — long-term memory for agentic tasks.`,
@@ -56,6 +65,7 @@ const displayVersion = () => {
       'Flags:',
       '  -v, --version   print the version and exit',
       '  -h, --help      print this and exit',
+      '      --doctor    report what this configuration resolves to, and exit',
       '',
       'Key environment variables:',
       '  MEMORY_DIR      the folder holding your memories. Required; never guessed.',
