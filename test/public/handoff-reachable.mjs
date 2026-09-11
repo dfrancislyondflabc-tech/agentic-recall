@@ -247,6 +247,62 @@ export async function handoffReachableTests({ check, group }) {
         optedIn.handoffRoots === 1 && optedIn.reason === null, JSON.stringify(optedIn));
     }
 
+
+    // ---- 8. 🟥 N4 — SUPPRESSION MUST REACH THE INDEX LOAD, NOT ONLY THE ROOTS.
+    //
+    // The N3 fix gated rootsForCorpus(). It did not gate indexPathForCorpus(). So a handoff index
+    // built while MEMORY_HANDOFF_DIRS was set kept ANSWERING after the variable was removed — the
+    // predicate said "not searched" while the search returned documents. Found by a Windows tester
+    // running the control this file's (hr2) describes, hours after N3 shipped; the N3 fix created
+    // it. A suppression feature that still returns documents fails in the direction that matters.
+    {
+      const built = ask(env({ MEMORY_DIR: mem, MEMORY_HANDOFF_DIRS: hand }), `
+        const C = await import(CFG); const { buildIndex } = await import(IDX);
+        const r = await buildIndex({ force: true, dir: C.rootsForCorpus('handoff'), out: C.handoffIndexPath() });
+        out({ indexed: r.filesIndexed, path: C.handoffIndexPath() });`);
+      check('(hr8) [setup] a handoff index exists on disk', built.indexed === 1, JSON.stringify(built));
+
+      const after = ask(env({ MEMORY_DIR: mem, MEMORY_HANDOFF_DIRS: '' }), `
+        const C = await import(CFG); const fs = await import('node:fs');
+        const memory = await memoryTool();
+        const r = await memory({ action: 'search', query: 'tide window override for the Ardrossan berth', scope: 'handoff' });
+        out({ fileStillOnDisk: fs.existsSync(${JSON.stringify('')} || C.handoffIndexPath() || 'x'),
+              indexPath: C.indexPathForCorpus('handoff'),
+              reason: C.corpusSuppressedReason('handoff'),
+              names: (r.results || []).map((x) => x.name) });`);
+      check('(hr8) 🟥 a SUPPRESSED corpus does not answer from the index already on disk',
+        (after.names || []).length === 0, 'returned ' + JSON.stringify(after.names));
+      check('(hr8) ...because indexPathForCorpus returns null for it, the same answer a switched-off corpus gives',
+        after.indexPath === null, String(after.indexPath));
+      check('(hr8) ...and the predicate and the index path AGREE',
+        (after.reason ? after.indexPath === null : after.indexPath !== null), JSON.stringify({ reason: after.reason, path: after.indexPath }));
+
+      // [control] the index file is untouched — suppression HIDES a corpus, it never deletes one.
+      const back = ask(env({ MEMORY_DIR: mem, MEMORY_HANDOFF_DIRS: hand }), `
+        const memory = await memoryTool();
+        const r = await memory({ action: 'search', query: 'tide window override for the Ardrossan berth', scope: 'handoff' });
+        out({ names: (r.results || []).map((x) => x.name) });`);
+      check('(hr8) [control] naming the variable again brings the SAME index back — nothing was deleted',
+        (back.names || []).includes('HANDOFF-ferry-timetable'), JSON.stringify(back.names));
+    }
+
+    // ---- 9. the class, not the instance: one predicate answers for every corpus.
+    {
+      const r = ask(env({ MEMORY_DIR: mem, MEMORY_HANDOFF_DIRS: '' }), `
+        const C = await import(CFG);
+        const rows = {};
+        for (const n of ['curated', 'handoff', 'books', 'projects', 'staging'])
+          rows[n] = { reason: C.corpusSuppressedReason(n), path: C.indexPathForCorpus(n) };
+        out(rows);`);
+      check('(hr9) curated is never suppressed by configuration', r.curated?.reason === null, JSON.stringify(r.curated));
+      check('(hr9) handoff and a library category BOTH answer through the one predicate',
+        typeof r.handoff?.reason === 'string' && typeof r.books?.reason === 'string',
+        JSON.stringify({ handoff: r.handoff?.reason, books: r.books?.reason }));
+      const disagree = Object.entries(r).filter(([, v]) => v && v.reason && v.path !== null);
+      check('(hr9) 🟥 NO corpus can be suppressed and still have an index path',
+        disagree.length === 0, disagree.map(([k, v]) => k + ' -> ' + v.path).join(', '));
+    }
+
   } finally {
     cleanupSandbox(tmp, { label: 'handoff-reachable' });
   }
