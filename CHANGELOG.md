@@ -67,6 +67,15 @@ diagnostics. Retrieval is untouched — the ranking snapshot is byte-identical.
   blocks and 2.0.1's missing build stamp. A week was spent disputing whether a README fix had
   shipped because neither party could say which artefact they were reading.
 
+### Documentation
+
+- `MEMORY_GIT_REPOS` and `MEMORY_HANDOFF_DIRS` were described as colon-separated. The code splits
+  on `path.delimiter`, so it is `;` on Windows — and Windows is where anyone reading that sentence
+  is most likely to be. The env-var table was already right; the prose and one internal docstring
+  were behind. Reported by the same Windows tester.
+
+### Added (continued)
+
 - **`provenance: { codeRoot, corpus }` on every response** — `serverVersion` names the version,
   not the installation, and a disputed result usually turns on the second.
 

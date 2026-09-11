@@ -622,7 +622,8 @@ memory({action: "verify", name: "x-df6d25fe-20260818T214812690Z"})
 - **Measured coverage:** 404 of 2,319 exchanges (17%) name a real commit. 707 hex-shaped
   candidates collapse to 355 actual commits, so shape alone proves nothing and every token is
   checked against git.
-- **Repos are configured, never inferred** — set `MEMORY_GIT_REPOS` to a colon-separated list.
+- **Repos are configured, never inferred** — set `MEMORY_GIT_REPOS` to a `:`-separated list
+  (`;` on Windows — the code splits on `path.delimiter`, so use your platform's).
   Unconfigured, this stays silent rather than guessing: this server lives in a different repo from
   the codebase the corpus is about, and guessing would answer confidently about the wrong project.
 - **`onMainline` is separate from existence.** A commit can sit in the object store after being
