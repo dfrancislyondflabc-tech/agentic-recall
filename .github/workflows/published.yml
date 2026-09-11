@@ -1,0 +1,39 @@
+# Verify the artefact npm ACTUALLY SERVES — not the tree we built.
+#
+# 🟥 Every packaging defect found in the week this was written was invisible to `npm test` and
+# obvious in the tarball: a missing build stamp, a redaction config left behind, a lockfile naming
+# the wrong version, and an unpinned README that a tester and the author spent an evening disputing
+# because neither could say which artefact they were looking at.
+#
+# So this runs AFTER a release exists, against the registry, on all three operating systems —
+# because "it works in the repo" has never been the question.
+name: published artefact
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'version to check (default: package.json)'
+        required: false
+  schedule:
+    # Weekly. A published tarball cannot change, but `latest` can move under you — and a dist-tag
+    # pointing at the wrong release is exactly the class of problem nothing else here would notice.
+    - cron: '17 6 * * 1'
+
+jobs:
+  published:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      # No `npm ci` on purpose: this job must not depend on the checkout's dependencies. It fetches
+      # the published package and installs THAT, the way a stranger does.
+      - name: check the published artefact
+        run: node scripts/check-published.mjs ${{ github.event.inputs.version }}
