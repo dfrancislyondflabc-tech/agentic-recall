@@ -10,6 +10,66 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [2.0.2] — 2026-09-11
+
+Everything here came out of one week of external testing, and all of it is packaging or
+diagnostics. Retrieval is untouched — the ranking snapshot is byte-identical.
+
+### Fixed
+
+- **🟥 A suppressed corpus kept answering from the index already on disk.** Removing
+  `MEMORY_HANDOFF_DIRS` made `corpusSuppressedReason()` report "not searched" and
+  `rootsForCorpus()` return nothing, while `search scope:'handoff'` returned documents
+  regardless — because `indexPathForCorpus()` never consulted the predicate. A suppression
+  feature that still returns documents fails in the direction that matters.
+
+  **This is the third instance of one bug class**, and the second fix created the third:
+  MEM-32 (library), N3 (handoff roots), N4 (handoff's read path). The N3 fix mirrored
+  `librarySuppressedReason()` into `handoffSuppressedReason()` — noting the duplication in a
+  comment — instead of unifying them. There is now one `corpusSuppressedReason(name)`, and the
+  index load consults it.
+
+  Found by a tester running a control the test document asked for. Only handoff actually
+  leaked; the library instance was prevented, not repaired.
+
+- **The lockfile said 1.7.5** while `package.json` said 2.0.1, through every release since
+  1.8.0. `npm ci` does not enforce the root version field, so nothing broke — but a file the
+  container build reads should not lie.
+
+- **Both distributions reported a commit nobody could look up.** npm installs said
+  `unknown-sha(no-git)`; the container said a sha from the *private* repo. The build stamp is
+  now generated at pack time from this repository's HEAD and ships in the tarball.
+
+- **The released capture copy shipped without its redaction rules.** `release-capture.sh`
+  copied `scripts/`, `lib/` and `package.json` but not `secrets-exclude.json`, which
+  `secretsConfigPath()` resolves against the code directory. While the copy lived inside the
+  repo the omission was invisible; released from anywhere else, every capture run died with
+  *"secrets-exclude.json unreadable — refusing to index (fail closed)"*. Measured on a live
+  machine, which stopped capturing for twenty minutes.
+
+### Added
+
+- **`agentic-recall --doctor`** — what does this configuration actually resolve to? Config
+  surfaces and whether they **disagree**, every corpus and why it is or is not reachable, every
+  index with its document count, every runtime file the code opens, and the running build.
+  It answers; it never repairs.
+
+  Three problems had been live on one machine for days while the server printed a warning about
+  one of them at every boot into a stream nobody reads. Every warning `--doctor` can print has a
+  firing case in the tests, with a matching control proving it stays quiet on a healthy install.
+
+- **`npm run check:published [version]`** — verifies the artefact npm actually serves: fetches
+  from the registry, installs it, and asserts the version, that no unpinned config block
+  survives in the README, that every `files[]` entry is present, and that the binary runs. Runs
+  on release publish, on demand, and weekly, on all three operating systems.
+
+  Proved against real releases rather than a fixture: it reports 2.0.0's three unpinned config
+  blocks and 2.0.1's missing build stamp. A week was spent disputing whether a README fix had
+  shipped because neither party could say which artefact they were reading.
+
+- **`provenance: { codeRoot, corpus }` on every response** — `serverVersion` names the version,
+  not the installation, and a disputed result usually turns on the second.
+
 ## [2.0.1] — 2026-09-10
 
 ### Fixed
