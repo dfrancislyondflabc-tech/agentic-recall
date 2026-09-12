@@ -132,7 +132,10 @@ looked up. Four commands, and only what they prove:
 
 Measured over 2,319 ingested exchanges: 707 SHA-shaped candidates collapsed to **355 real commits**.
 Half of what looks like a commit isn't one, which is why every token is checked rather than trusted
-for its shape.
+for its shape. Those rejects are not invented commits: re-measured on the current,
+larger corpus, 79% of reject occurrences are hex prefixes of conversation session IDs that the
+deliberately loose 7-10 character pattern sweeps up, so this gap measures how little the shape
+tells you rather than how often a memory fabricates a SHA.
 
 **What this does not tell you, deliberately.** It does not check whether the change was later
 reverted, or whether the thing still exists at `HEAD`. A commit that landed and was undone the next
