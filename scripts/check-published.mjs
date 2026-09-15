@@ -18,10 +18,17 @@
 //
 // It makes network calls, so it is not part of `npm test`. Run it AFTER publishing.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// 🟥 WINDOWS. `npm` is npm.cmd there, and execFile does not go through a shell, so
+// execFileSync('npm', …) is ENOENT — which is exactly how this gate failed on
+// windows-latest from the day it was written while passing on macOS and Linux. The
+// Windows arm therefore never checked anything. `ls` and `mkdir -p` are not Windows
+// commands either; both are replaced with node:fs calls that work everywhere.
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -37,8 +44,8 @@ console.log(`published-artefact check: ${NAME}@${WANT}`);
 const T = mkdtempSync(join(tmpdir(), 'ar-published-'));
 let dir;
 try {
-  execFileSync('npm', ['pack', `${NAME}@${WANT}`, '--pack-destination', T], { encoding: 'utf8', stdio: 'pipe' });
-  const tgz = execFileSync('ls', [T], { encoding: 'utf8' }).trim().split('\n').find((f) => f.endsWith('.tgz'));
+  execFileSync(NPM, ['pack', `${NAME}@${WANT}`, '--pack-destination', T], { encoding: 'utf8', stdio: 'pipe' });
+  const tgz = readdirSync(T).find((f) => f.endsWith('.tgz'));
   if (!tgz) throw new Error('npm pack produced no tarball');
   execFileSync('tar', ['xzf', join(T, tgz), '-C', T]);
   // 🟥 AND INSTALL IT, the way a user does. The first version ran index.js straight out of the
@@ -47,9 +54,9 @@ try {
   // script. A gate whose own setup is broken manufactures false findings, which is worse than
   // finding nothing.
   const proj = join(T, 'install');
-  execFileSync('mkdir', ['-p', proj]);
-  execFileSync('npm', ['init', '-y'], { cwd: proj, stdio: 'pipe' });
-  execFileSync('npm', ['install', join(T, tgz), '--no-audit', '--no-fund'], { cwd: proj, stdio: 'pipe' });
+  mkdirSync(proj, { recursive: true });
+  execFileSync(NPM, ['init', '-y'], { cwd: proj, stdio: 'pipe' });
+  execFileSync(NPM, ['install', join(T, tgz), '--no-audit', '--no-fund'], { cwd: proj, stdio: 'pipe' });
   dir = join(proj, 'node_modules', NAME);
   ok(`downloaded and installed ${tgz} from the registry`);
 } catch (e) {
