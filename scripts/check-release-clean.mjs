@@ -136,13 +136,23 @@ try {
 } catch { /* not a git tree — fall through to the walker */ }
 if (!usedGit) walk(target);
 
-if (!QUIET || findings.length) {
-  console.log(`release check: ${scanned} text files scanned under ${basename(target)}`);
-}
+console.log(`release check: ${scanned} text files scanned under ${basename(target)}`);
 for (const f of findings) {
   console.log(`  ${f.rel}`);
   for (const [name, sample] of f.hits) console.log(`      ${name}: ${sample}`);
 }
+// 🟥 A SCAN THAT READ NOTHING IS NOT A CLEAN SCAN. Measured 2026-09-15: pointed at an empty
+// git tree this printed "0 text files scanned" and then "clean", exit 0. Every way the file
+// list can come back empty — wrong directory, not a git checkout, git missing, a rename of the
+// release tree — turned the highest-stakes gate in the project into an unconditional PASS. This
+// is the gate that exists because a "clean" zip once shipped a live password. Refuse instead.
+const FLOOR = 5;
+if (scanned < FLOOR) {
+  console.log(`\nREFUSED: only ${scanned} file(s) were scanned under ${basename(target)} — this gate measured almost nothing.`);
+  console.log('A scan that read nothing is not evidence of a clean tree. Check the path is a populated checkout.');
+  process.exit(3);
+}
+
 if (findings.length) {
   console.log(`\nREFUSED: ${findings.length} file(s) name something that must not ship.`);
   console.log('Remove the term (do not redact it — public source should not carry markers),');

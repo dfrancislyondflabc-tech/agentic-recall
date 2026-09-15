@@ -93,6 +93,14 @@ if (claimsNpx && claimsNotOnNpm) {
 // ---- report --------------------------------------------------------------------------------
 console.log(`docs install check: ${pkgs.size} npm reference(s), README ${README.length} bytes`);
 for (const n of notes) console.log(`  ok    ${n}`);
+// 🟥 Same vacuity guard as check-release-clean: a README whose install instructions this gate
+// cannot FIND is not a README whose install instructions work. Zero references means the
+// extraction broke, not that the docs are perfect.
+if (pkgs.size === 0) {
+  console.error('\n  FAIL  found NO npm package references in the README — this gate checked nothing.');
+  console.error('  Either the README lost its install instructions, or the extraction stopped matching them.');
+  process.exit(3);
+}
 if (failures.length) {
   console.error('');
   for (const f of failures) console.error(`  FAIL  ${f}`);

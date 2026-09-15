@@ -32,7 +32,7 @@
     "analyse-queries": "node scripts/analyse-query-log.js",
     "commit-memories": "node scripts/commit-memories.js --verbose",
     "memories-status": "node scripts/commit-memories.js --status",
-    "check:release": "node scripts/check-release-clean.mjs && node scripts/check-state-gitignored.mjs && node scripts/check-docs-install.mjs && node scripts/check-claims.mjs",
+    "check:release": "node scripts/check-release-clean.mjs && node scripts/check-state-gitignored.mjs && node scripts/check-docs-install.mjs && node scripts/check-claims.mjs && node scripts/check-ci-green.mjs",
     "capture": "node scripts/timed-capture.mjs",
     "release:capture": "zsh scripts/release-capture.sh",
     "install:capture-hooks": "zsh scripts/install-capture-hooks.sh",
@@ -49,7 +49,8 @@
     "release:notes": "node scripts/release-notes.mjs",
     "stamp": "node scripts/stamp-build.mjs",
     "prepack": "node scripts/stamp-build.mjs",
-    "check:published": "node scripts/check-published.mjs"
+    "check:published": "node scripts/check-published.mjs",
+    "check:ci": "node scripts/check-ci-green.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

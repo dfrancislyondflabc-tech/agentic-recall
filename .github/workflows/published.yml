@@ -37,3 +37,23 @@ jobs:
       # the published package and installs THAT, the way a stranger does.
       - name: check the published artefact
         run: node scripts/check-published.mjs ${{ github.event.inputs.version }}
+
+  # 🟥 THE GAP THE OTHER JOBS LEFT. `published` above installs the artefact and checks its shape.
+  # ci.yml's `real-book-windows` imports a REAL Gutenberg book — but from the CHECKOUT. So the
+  # thing a stranger installs had never been made to do actual work: import, index, retrieve.
+  # Anything living in packaging-PLUS-workload (a file missing from files[], a path that only
+  # breaks under %APPDATA%, a model cache that cannot write where npm put it) fell between them.
+  #
+  # Network-dependent (registry + gutenberg.org), so failures here need reading before believing.
+  real-book:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: install from npm and do real work
+        run: node test/public/published-real-book.mjs ${{ github.event.inputs.version }}
