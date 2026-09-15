@@ -28,7 +28,15 @@ import { fileURLToPath } from 'node:url';
 // windows-latest from the day it was written while passing on macOS and Linux. The
 // Windows arm therefore never checked anything. `ls` and `mkdir -p` are not Windows
 // commands either; both are replaced with node:fs calls that work everywhere.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const WIN = process.platform === 'win32';
+const NPM = WIN ? 'npm.cmd' : 'npm';
+// 🟥 AND shell:true ON WINDOWS. Finding npm.cmd is not enough — since the CVE-2024-27980
+// hardening, Node refuses to execute a .cmd/.bat through spawn without a shell and throws
+// EINVAL. This is the SAME failure this project's own README documents for users running
+// `npx` as an MCP command on Windows; the gate had the disease it diagnoses. Every argument
+// here is either a literal or a path this script created, so no untrusted input reaches the
+// shell.
+const NPMOPT = WIN ? { shell: true } : {};
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -44,7 +52,7 @@ console.log(`published-artefact check: ${NAME}@${WANT}`);
 const T = mkdtempSync(join(tmpdir(), 'ar-published-'));
 let dir;
 try {
-  execFileSync(NPM, ['pack', `${NAME}@${WANT}`, '--pack-destination', T], { encoding: 'utf8', stdio: 'pipe' });
+  execFileSync(NPM, ['pack', `${NAME}@${WANT}`, '--pack-destination', T], { encoding: 'utf8', stdio: 'pipe', ...NPMOPT });
   const tgz = readdirSync(T).find((f) => f.endsWith('.tgz'));
   if (!tgz) throw new Error('npm pack produced no tarball');
   execFileSync('tar', ['xzf', join(T, tgz), '-C', T]);
@@ -55,8 +63,8 @@ try {
   // finding nothing.
   const proj = join(T, 'install');
   mkdirSync(proj, { recursive: true });
-  execFileSync(NPM, ['init', '-y'], { cwd: proj, stdio: 'pipe' });
-  execFileSync(NPM, ['install', join(T, tgz), '--no-audit', '--no-fund'], { cwd: proj, stdio: 'pipe' });
+  execFileSync(NPM, ['init', '-y'], { cwd: proj, stdio: 'pipe', ...NPMOPT });
+  execFileSync(NPM, ['install', join(T, tgz), '--no-audit', '--no-fund'], { cwd: proj, stdio: 'pipe', ...NPMOPT });
   dir = join(proj, 'node_modules', NAME);
   ok(`downloaded and installed ${tgz} from the registry`);
 } catch (e) {
