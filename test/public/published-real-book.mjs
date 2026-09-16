@@ -11,6 +11,10 @@
 // Gutenberg front matter, indexes it, searches it, and asserts the book comes back.
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+// 🟥 verify-stdio enforces this on every public test that spawns a process: use the
+// project's cleanup, never a bare kill(). The first version of this file used srv.kill()
+// and turned CI red — the convention gate caught it, which is the gate working.
+import { stopAndClean } from './sandbox-cleanup.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -113,7 +117,7 @@ try {
 } catch (e) {
   bad(`MCP exchange failed: ${e.message}`);
 } finally {
-  srv.kill();
+  await stopAndClean({ child: srv, dir: T, label: 'published-real-book' });
 }
 
 if (failures) { console.log(`\nREFUSED: ${failures} problem(s) using the PUBLISHED package on real content.`); process.exit(3); }
