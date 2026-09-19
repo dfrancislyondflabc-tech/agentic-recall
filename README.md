@@ -151,7 +151,9 @@ memories are about.
 ---
 
 Two-tier hybrid retrieval over Claude's persistent memory corpus, exposed to
-Claude Desktop and Claude Code as a single MCP tool: **`memory`**.
+Claude Desktop and Claude Code as two MCP tools: **`memory`**, which is read-only and
+never writes to your memory folder, and **`memory_write`**, which is the only way
+anything this server does can change it.
 
 The curated corpus is the folder you point `MEMORY_DIR` at (see **Environment overrides**).
 `MEMORY.md`, if you have one, is treated as a hand-curated tier-1 index.
