@@ -202,6 +202,66 @@ try {
     JSON.stringify(byName.memory?.annotations));
   check('`memory_write` declares destructiveHint TRUE', byName.memory_write?.annotations?.destructiveHint === true,
     JSON.stringify(byName.memory_write?.annotations));
+
+  // 🟥 THE SCHEMA WAS RIGHT AND THE PROSE WAS WRONG. Shipped in 2.0.x and caught by Glama's
+  // automated tool-description score, not by us: `memory`'s description still carried the
+  // pre-split action list ("... verify, import, capture ..., index ..., demote/promote"), so a
+  // model reading the read tool believed it could call write actions the enum refuses. Every
+  // structural guard above passed the whole time, because none of them read the DESCRIPTION.
+  // An action name in the wrong tool's prose is a misselection waiting to happen, so it is a
+  // check now rather than a rule nobody re-reads.
+  //
+  // Word-boundary matched: `index_status` must NOT count as `index` (it does not — `_` is a word
+  // character, so /\bindex\b/ cannot match inside it), and neither must `uncapturedSessions`,
+  // `captureHealth` or `exchangesCaptured` count as `capture`.
+  // A foreign action name is only a LEAK when the sentence does not say where the action lives.
+  // `memory_write` saying "Reads - search, latest, get ... - are on `memory`" is a SIGNPOST and is
+  // precisely the disambiguation this check exists to protect; the old broken text named `import`
+  // and `demote` in its own "Actions:" list with no such pointer.
+  // 🟥 `index` is also the ordinary NOUN for the thing this server builds ("a built index",
+  // "indexStale", "a library index"), so matching it on a word boundary alone flags correct prose.
+  // `search` is the same: "a search never rebuilds...", "search results". For these names we require a CALLABLE context - backticked, or `action:`-shaped, or sitting
+  // in the "Actions:" enumeration - which is how this description refers to something you invoke.
+  // import/capture/demote/promote have no innocent reading here, so they stay strictly word-matched.
+  // Known limit, stated rather than hidden: unbackticked imperative prose about `index`
+  // ("rebuild one with index scope:...") would NOT be caught.
+  const NOUNY = new Set(['index', 'search']);
+  const claimed = (sentence, a) => {
+    if (!new RegExp(`\\b${a}\\b`).test(sentence)) return false;
+    if (!NOUNY.has(a)) return true;
+    return new RegExp('`' + a + '`').test(sentence) ||
+           new RegExp(`action:\\s*['"\`]?${a}\\b`).test(sentence) ||
+           (/Actions:/.test(sentence) && new RegExp(`[,:]\\s*${a}\\b`).test(sentence));
+  };
+  const leaks = (text, foreign, otherTool) => {
+    const owner = new RegExp(`\\b${otherTool}\\b`);
+    const hits = new Set();
+    for (const sentence of String(text || '').split(/(?<=\.)\s+/)) {
+      if (owner.test(sentence)) continue;            // names the other tool -> a pointer, not a claim
+      for (const a of foreign) if (claimed(sentence, a)) hits.add(a);
+    }
+    return [...hits];
+  };
+  const readProseLeak = leaks(byName.memory?.description, WRITE_EXPECTED, 'memory_write');
+  check('`memory` description names NO write action as its own', readProseLeak.length === 0,
+    readProseLeak.join(',') || 'clean');
+  const writeProseLeak = leaks(byName.memory_write?.description, READ_EXPECTED, 'memory');
+  check('`memory_write` description names NO read action as its own', writeProseLeak.length === 0,
+    writeProseLeak.join(',') || 'clean');
+  // CONTROL - vacuous unless the matcher can actually fire, ignore substrings, and honour the
+  // signpost exemption. `\bmemory\b` must NOT match inside `memory_write`, or a real leak in the
+  // write tool's prose would be masked by any sentence mentioning itself.
+  check('CONTROL - prose matcher fires, ignores substrings, honours signposts',
+    leaks('Actions: import and demote live here.', WRITE_EXPECTED, 'memory_write').length === 2 &&
+    leaks('index_status and captureHealth and uncapturedSessions.', WRITE_EXPECTED, 'memory_write').length === 0 &&
+    leaks('search is answered from a built index that may be stale.', WRITE_EXPECTED, 'memory_write').length === 0 &&
+    leaks('Actions: search, latest, index, get.', WRITE_EXPECTED, 'memory_write').length === 1 &&
+    leaks('`index` returns a jobId.', WRITE_EXPECTED, 'memory_write').length === 1 &&
+    leaks('Use memory_write for import.', WRITE_EXPECTED, 'memory_write').length === 0 &&
+    leaks('Call neighbors here.', READ_EXPECTED, 'memory').length === 1 &&
+    leaks('a search never rebuilds it.', READ_EXPECTED, 'memory').length === 0 &&
+    leaks('`search` is available here.', READ_EXPECTED, 'memory').length === 1,
+    'fires both directions / substring-safe / signpost-exempt / noun allowed / backticked action caught');
   check('CONTROL — the read tool carries NO write action',
     !READ_EXPECTED.some((a) => WRITE_EXPECTED.includes(a)) && !actions.some((a) => WRITE_EXPECTED.includes(a)),
     actions.join(','));
