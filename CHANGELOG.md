@@ -10,7 +10,7 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
-## [Unreleased]
+## [2.0.3] — 2026-09-22
 
 One defect, one fix, and the class it belongs to — and one new, switchable retrieval feature that
 is OFF by default. With the switch off, retrieval is untouched: the ranking snapshot over 46
