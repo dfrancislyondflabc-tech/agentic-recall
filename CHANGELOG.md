@@ -10,6 +10,81 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [Unreleased]
+
+One defect, one fix, and the class it belongs to. Retrieval is untouched; the ranking is the
+same. What changed is whether the index gets WRITTEN.
+
+### Fixed
+
+- **🟥 One document wedged every index rebuild for four days — the store kept filling, the index
+  never moved (MEM-91).** From 2026-09-18 20:49 to 09-22, every capture run (the timer, the Stop
+  hook) wrote its exchange files and then refused to write the staging index: 1,122 `failed` rows
+  in `.ingest-runs.jsonl`, all the same error, ≈320 exchanges on disk and unsearchable.
+
+  The cause was the final "belt and braces" credential sweep in `lib/index-store.js`, which ran the
+  redaction regexes over the WHOLE serialized index as one string. `url-embedded-credential`
+  (`scheme://user:password@host`) then matched ACROSS FIELDS. One exchange's description ended
+  `chrome://extensions.`; no whitespace followed until the `"account":"…@…"` field five fields later;
+  and the regex read
+
+      chrome://extensions.","descriptionSynthesised":false,…,"account":"someone@example.com"
+      ^scheme^ ^---------- "user" -----------^:^------------ "password" ----------------^@
+
+  as a URL with an embedded password. The replacement deleted six fields, the reparse failed, and
+  the build threw — with an error that blamed "vector data", because the only reparse check ever
+  written was for base64 vectors. Per-field guarding could never have seen it: `://` was in one
+  field and `@` in another. Four changes combined to make it possible (the whole-file sweep,
+  08-14; the account email on every exchange, 08-18; the vector-only reparse, 09-01; the URL
+  pattern, 09-04) and it waited fourteen days for the first description whose last token was an
+  unbroken `scheme://…`.
+
+  **What changed:**
+  - Every record is guarded FIELD BY FIELD (`guardValue`) before serialization, and the
+    whole-file string sweep is gone. A pattern now sees exactly one field's text. Vectors are
+    typed arrays at that point and pass through by reference, so the base64 clipping the old sweep
+    had to defend against cannot happen either. Fields that were never guarded before — session
+    title, name, parent name, heading, source path, links, the header — now are.
+  - `url-embedded-credential` no longer accepts `"`, `,`, `<` or `>` in the user or password part
+    (a real URL percent-encodes them). Defence in depth: the regex could no longer cross a JSON
+    field even if the sweep came back. **Stated limit:** a raw comma or quote inside a genuine URL
+    password is no longer caught.
+  - **A document that fails on its own is left out BY NAME and the other N are written**, listed
+    in `excluded` as `index-build-failed (<stage>): <error>` and counted in the header as
+    `docsFailed` (a count only — the header is read through a 4 KB window). An EMBED failure still
+    refuses the whole build: that is the model or the runtime, never the document, and dropping
+    documents on a model hiccup would make an outage look like a corpus that quietly shrank. Past
+    a small cap (max(3, 1 %)) the build refuses too. Reconcile does not loop on a skipped
+    document (the source listing is taken before the corpus is read), and `lib/freshness.js`
+    already treats `excluded` as judged, so no query re-flags it as stale.
+  - **`captureHealth` now names a repeated failure.** Two or more consecutive `failed` runs (or
+    walker reconciles) become `status:'unhealthy'` with `repeatedFailure: {count, since, lastAt,
+    stage, lastError}` and a note that says *"the next tick will NOT fix this — it is the same
+    failure every time"* — replacing "the next timer tick reconciles", which was false 1,121
+    times. The error text was in the run log the whole time; nothing read it back. When the streak
+    reaches the top of the 64 KB log tail the count is reported as "at least".
+  - **Store-write and index-write are stamped separately.** A run whose extractor succeeded but
+    whose build failed now stamps `.last-ingest.json` with `indexed: false` (a clean run omits the
+    key, so ordinary stamps are byte-identical). Before, no stamp was written at all, so a session
+    with 61 exchanges in the store read as "never captured", the debounce never engaged, and the
+    walker re-picked the same eight stuck sessions on every tick. The failed row now says which
+    half failed (`stage: 'extract' | 'index'`), and the walker's `finished` row carries the
+    reconcile error instead of losing it to a stderr that a reboot erases.
+  - A `.pending-index.json` marker older than the index's own `builtAt` is treated as closed;
+    the walker's reconcile — which is what actually rebuilds after a wedge — never removed it.
+
+  **What the suite now proves** (`test/public/run-public-tests.js`, group MEM-91): the incident's
+  exact document shape builds with both fields intact (with a CONTROL showing the record still
+  matches the PRE-fix regex, so the fixture reproduces the bug); the incident text is left alone by
+  `redact()` while postgres/redis/https/quoted URL passwords still redact; a key HEADER in one field
+  and its FOOTER in another cannot splice the index (the fixture only the per-field guard fixes);
+  one throwing document is excluded by name, the other fifteen are written, the source listing
+  still matches and nothing reads as stale; over the cap the build refuses and the previous index
+  is byte-identical; the health streak counts, names the error, says "at least" when the log is
+  cut off, clears on a later success, and a stale pending marker is closed. Mutation-tested: the
+  old string sweep restored ⇒ the cross-field key test fails; the old regex restored ⇒ the
+  redact test fails; both ⇒ the incident fixture fails.
+
 ## [2.0.2] — 2026-09-11
 
 Everything here came out of one week of external testing, and all of it is packaging or

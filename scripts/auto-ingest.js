@@ -446,6 +446,12 @@ try {
 // unchanged". Read the size here, before the extractor does, and stamp exactly that.
 let sizeAtStart = 0; try { sizeAtStart = statSync(transcript).size; } catch (_) { /* ignore */ }
 let failed = false;
+// DID THE EXTRACTOR FINISH? (MEM-91.) A run has two halves — write the store, rebuild the index —
+// and for four days the second half failed on every run while the first half succeeded. The stamp
+// below used to record nothing in that case, so 61 exchanges sitting in the store read as "never
+// captured", the debounce never engaged, and the walker re-picked the same eight stuck sessions on
+// every tick. Store-write and index-write are stamped separately now.
+let extractorOk = false;
 // Set from the extractor's own report below, and written into the debounce stamp (MEM-67).
 let deferredInFlight = false;
 // A `started` line with no terminal line after it is the signature of a run that was killed.
@@ -472,6 +478,7 @@ try {
     ...(TIMED ? (INFLIGHT_QUIET_MS === null ? ['--defer-last']
                                             : ['--defer-last-unless-quiet-ms', String(INFLIGHT_QUIET_MS)]) : [])],
     { stdio: ['ignore', 'pipe', 'pipe'], env: process.env }).toString();
+  extractorOk = true;
 
   // NO process.exit() INSIDE THIS TRY. process.exit() does not run `finally`,
   // so the early return for "nothing new" leaked the lock on every quiet run --
@@ -535,7 +542,8 @@ try {
     const report = await buildIndex({ dir: staging, out: stagingIdx });
     stampReconcile(liveListing, reconcileStamp);
     runLog('reconciled', { reason, storeFiles: after, indexFiles,
-      indexedDocs: report.filesIndexed, indexedChunks: report.chunkCount });
+      indexedDocs: report.filesIndexed, indexedChunks: report.chunkCount,
+      ...(report.filesFailed ? { docsFailed: report.filesFailed } : {}) });
   } else {
     log(`${newExchanges} new exchange(s)${rewritten ? `, ${rewritten} rewritten` : ''}; refreshing staging index`);
     // `staging` above is rootsForCorpus('staging'), NOT !primary. There are three corpora now, and
@@ -552,7 +560,8 @@ try {
     // ever logged. A telemetry field that cannot disagree with itself measures nothing.
     log(`staging index: ${report.filesIndexed} docs, ${report.chunkCount} chunks`);
     runLog('captured', { newExchanges, ...(rewritten ? { rewritten } : {}), storeFiles: after,
-      indexedDocs: report.filesIndexed, indexedChunks: report.chunkCount });
+      indexedDocs: report.filesIndexed, indexedChunks: report.chunkCount,
+      ...(report.filesFailed ? { docsFailed: report.filesFailed } : {}) });
   }
   // ---- ONE LINE A CALLER CAN PARSE (MEM-71a) ---------------------------------------------------
   //
@@ -567,7 +576,9 @@ try {
 } catch (e) {
   failed = true;
   log('FAILED:', e.message);
-  runLog('failed', { error: String(e.message).slice(0, 300) });
+  // WHICH HALF FAILED (MEM-91): `extract` = nothing reached the store; `index` = the store has the
+  // exchanges and the index does not. lib/ingest-health.js reads this row back into captureHealth.
+  runLog('failed', { stage: extractorOk ? 'index' : 'extract', error: String(e.message).slice(0, 300) });
   process.exitCode = 1;
 } finally {
   // No stamp after a failure: a stamp says "this size was captured", and it was not. Without this
@@ -589,9 +600,16 @@ try {
     log('windowed run (--since-minutes): the debounce stamp is left untouched — a slice cannot ' +
         'claim the whole transcript was captured');
   }
-  if (!failed && !WINDOWED) {
+  // 🟥 BUT A STAMP AFTER A STORE WRITE WHOSE INDEX FAILED IS TRUE (MEM-91). "This size was
+  // captured" is a claim about the STORE, and the extractor made it good; only the index is behind,
+  // and the index is caught up by the reconcile pass (lib/reconcile.js — listing-digest-mismatch is
+  // exactly this state), not by re-running the extractor over a transcript it already read. Marked
+  // `indexed: false` so a reader can tell the two apart; a clean run omits the key, so an ordinary
+  // stamp is byte-for-byte what it was before this existed.
+  if ((!failed || extractorOk) && !WINDOWED) {
     try {
-      stamps[txKey] = { at: Date.now(), size: sizeAtStart, ...(deferredInFlight ? { deferred: true } : {}) };
+      stamps[txKey] = { at: Date.now(), size: sizeAtStart, ...(deferredInFlight ? { deferred: true } : {}),
+        ...(failed ? { indexed: false } : {}) };
       writeFileSync(stampFile, JSON.stringify(stamps, null, 2) + '\n', 'utf8');
     } catch (_) { /* a missing stamp only costs a redundant run */ }
   }

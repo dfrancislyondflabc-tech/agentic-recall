@@ -275,6 +275,197 @@ group('credentials in a note do not reach the index or a search result');
 }
 
 // =============================================================================================
+group('MEM-91 — one document can no longer wedge the whole index (2026-09-18 → 09-22)');
+// THE INCIDENT. The final credential sweep ran over the WHOLE serialized index as one string, and
+// `url-embedded-credential` matched ACROSS FIELDS: a description ending `chrome://extensions.`
+// supplied `scheme://`, the `"account":"…@…"` field five fields later supplied the `@`, and the
+// regex read the JSON between them as user:password. The replacement deleted six fields, the
+// reparse failed, and every capture run for four days wrote its exchanges and refused the index.
+//
+// MUTATIONS (run by hand on 2026-09-22, recorded so the controls stay honest):
+//   - put `guard(JSON.stringify(payload), 'index-file')` back in lib/index-store.js  → 5c red
+//   - revert the url-embedded-credential regex in secrets-exclude.json               → 5b red
+//   - both                                                                            → 5a red
+const OLD_URL_RE = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]*):(?!\/\/)(?!\[REDACTED[\]:])([^\s@/]+)@/gi;
+{
+  // ---- 5a: the incident fixture, byte-shape faithful -------------------------------------------
+  const sb = sandbox();
+  copyFixtures(sb.env.MEMORY_DIR);
+  // `account` MUST sit under `metadata:` — lib/corpus.js docFieldsFromFrontmatter reads
+  // meta.account; a top-level key is ignored and the fixture would prove nothing.
+  writeFileSync(join(sb.env.MEMORY_DIR, 'mem91-url.md'),
+    '---\nname: mem91-url-then-account\n' +
+    'description: Daniel reloaded the unpacked extension from chrome://extensions.\n' +
+    'metadata:\n  account: someone@example.com\n---\n\n' +
+    'An ordinary body about reloading an unpacked extension after a rebuild.\n');
+  const r = run(sb.env, `
+    const rep = await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const { readFileSync } = await import('node:fs');
+    const text = readFileSync(process.env.MEMORY_INDEX, 'utf8');
+    let parsed = null; try { parsed = JSON.parse(text); } catch {}
+    const doc = parsed && parsed.docs.find((d) => d.name === 'mem91-url-then-account');
+    out({ filesIndexed: rep.filesIndexed, filesFailed: rep.filesFailed, parses: !!parsed,
+          desc: doc && doc.description, account: doc && doc.account,
+          recordText: doc ? JSON.stringify(doc) : '', text });`);
+  // CONTROL — the fixture really reproduces the incident: the serialized record, as it sits in the
+  // file, DOES match the pre-fix regex. If this ever stops matching, 5a is no longer testing the bug.
+  OLD_URL_RE.lastIndex = 0;
+  check('(mem91) CONTROL — the built record matches the PRE-FIX regex, i.e. the fixture reproduces the incident',
+    OLD_URL_RE.test(String(r.recordText || '')), String(r.recordText || '').slice(0, 200));
+  check('(mem91) a description ending in a bare scheme:// plus an account email BUILDS',
+    r.filesIndexed === 17 && r.filesFailed === 0 && r.parses === true, JSON.stringify({ n: r.filesIndexed, f: r.filesFailed, p: r.parses, e: r.stderr }));
+  check('(mem91) ...and both fields are intact — nothing between them was eaten',
+    typeof r.desc === 'string' && r.desc.endsWith('chrome://extensions.') && r.account === 'someone@example.com' &&
+    !String(r.recordText || '').includes('[REDACTED'), JSON.stringify({ desc: r.desc, account: r.account }));
+  cleanupSandbox(sb.dir);
+}
+{
+  // ---- 5b: the pattern itself, on the exact text that broke, and on the shapes it must keep ----
+  const sb = sandbox();
+  const r = run(sb.env, `
+    const { redact } = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'secrets.js')).href)});
+    const incident = 'chrome://extensions.","descriptionSynthesised":false,"hasFrontmatter":true,"type":"exchange","tier":"hot","root":null,"account":"someone@example.com"';
+    const twoFields = '{"a":"chrome://x","b":"q@r"}';
+    const keep = { pg: 'postgres://admin:s3cr3tp4ss@db.internal:5432/main', redis: 'redis://:onlyapassword@cache.internal:6379',
+                   https: 'https://user:hunter2xyz@host/', quoted: 'url="postgres://admin:pw123abc@db"' };
+    const kept = Object.fromEntries(Object.entries(keep).map(([k, v]) => [k, redact(v)]));
+    out({ incidentHits: redact(incident).hits, twoFieldsHits: redact(twoFields).hits,
+          stillRedacted: Object.entries(kept).filter(([, r]) => r.hits.includes('url-embedded-credential') &&
+            !/s3cr3tp4ss|onlyapassword|hunter2xyz|pw123abc/.test(r.text)).map(([k]) => k) });`);
+  check('(mem91) the incident\'s cross-field text is left alone by redact()',
+    Array.isArray(r.incidentHits) && r.incidentHits.length === 0 && Array.isArray(r.twoFieldsHits) && r.twoFieldsHits.length === 0,
+    JSON.stringify([r.incidentHits, r.twoFieldsHits]));
+  check('(mem91) ...while postgres, redis, https and a quoted URL password still redact',
+    Array.isArray(r.stillRedacted) && r.stillRedacted.length === 4, JSON.stringify(r.stillRedacted));
+  cleanupSandbox(sb.dir);
+}
+{
+  // ---- 5c: the fixture ONLY the per-record guard fixes (the regex hardening cannot) -----------
+  // `private-key-block` spans `[\s\S]*?` from a BEGIN line to an END line. Under the old whole-file
+  // sweep it spanned from the (never-guarded) sessionTitle field into the body chunk and spliced
+  // out everything between; per-record guarding sees each field alone and nothing spans.
+  const sb = sandbox();
+  copyFixtures(sb.env.MEMORY_DIR);
+  writeFileSync(join(sb.env.MEMORY_DIR, 'mem91-key.md'),
+    '---\nname: mem91-key-header-then-footer\n' +
+    'description: rotating a deploy key, notes from the runbook\n' +
+    'metadata:\n  sessionTitle: rotating the -----BEGIN OPENSSH PRIVATE KEY----- file\n---\n\n' +
+    'The footer reads -----END OPENSSH PRIVATE KEY----- and nothing else.\n');
+  const r = run(sb.env, `
+    const rep = await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const { readFileSync } = await import('node:fs');
+    let parsed = null; try { parsed = JSON.parse(readFileSync(process.env.MEMORY_INDEX, 'utf8')); } catch {}
+    const doc = parsed && parsed.docs.find((d) => d.name === 'mem91-key-header-then-footer');
+    out({ filesIndexed: rep.filesIndexed, parses: !!parsed, present: !!doc,
+          chunkOk: !!doc && doc.chunks.some((c) => /footer reads/.test(c.text)),
+          desc: doc && doc.description });`);
+  check('(mem91) a key HEADER in one field and its FOOTER in another cannot splice the index',
+    r.filesIndexed === 17 && r.parses === true && r.present === true && r.chunkOk === true &&
+    r.desc === 'rotating a deploy key, notes from the runbook', JSON.stringify(r));
+  cleanupSandbox(sb.dir);
+}
+{
+  // ---- 5d: one failing document is left out BY NAME; the other fifteen are written -------------
+  // The poisoned document is picked from the gold corpus by position, and its NAME is read from the
+  // corpus loader, so the test never depends on a hard-coded slug.
+  const sb2 = sandbox();
+  copyFixtures(sb2.env.MEMORY_DIR);
+  const poison = readdirSync(FIXTURES).filter((f) => f.endsWith('.md')).sort()[3].replace(/\.md$/, '');
+  writeFileSync(join(sb2.dir, 'names.json'), JSON.stringify({ poison }));
+  const r2 = run(sb2.env, `
+    const idx = await import(IDX);
+    const { readFileSync, statSync } = await import('node:fs');
+    const { checkStaleness } = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'freshness.js')).href)});
+    const { sourceListingOf } = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'corpus.js')).href)});
+    const { loadCorpus } = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'corpus.js')).href)});
+    const roots = [{ dir: process.env.MEMORY_DIR, corpus: 'curated', primary: true }];
+    const names = JSON.parse(readFileSync(process.env.MEMORY_DIR + '/../names.json', 'utf8'));
+    const realName = loadCorpus(roots).docs.find((d) => d.file === names.poison + '.md').name;
+    idx._setIndexDocHookForTests((d) => { if (d.name === realName) throw new Error('planted by the test'); });
+    const rep = await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const parsed = JSON.parse(readFileSync(process.env.MEMORY_INDEX, 'utf8'));
+    const poisonRow = parsed.excluded.find((e) => e.name === realName);
+    const live = sourceListingOf(roots);
+    const stale = checkStaleness(parsed, roots);
+    const bytesGood = statSync(process.env.MEMORY_INDEX).size;
+    idx._setIndexDocHookForTests(() => { throw new Error('planted everywhere'); });
+    let refused = null; try { await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX); } catch (e) { refused = e.message; }
+    idx._setIndexDocHookForTests(null);
+    out({ realName, filesIndexed: rep.filesIndexed, filesFailed: rep.filesFailed, failed: rep.failed, poisonRow,
+          docsFailedHeader: parsed.header.docsFailed, inDocs: parsed.docs.some((d) => d.name === realName),
+          listingMatches: !!parsed.header.sourceListing && parsed.header.sourceListing.digest === live.digest,
+          staleFiles: stale.staleFiles, refused, bytesAfter: statSync(process.env.MEMORY_INDEX).size, bytesGood });`);
+  check('(mem91) one document that throws is left out BY NAME and the other fifteen are written',
+    r2.filesIndexed === 15 && r2.filesFailed === 1 && r2.inDocs === false && !!r2.poisonRow &&
+    /^index-build-failed \(guard\): planted by the test/.test(String(r2.poisonRow && r2.poisonRow.reason)) && r2.docsFailedHeader === 1,
+    JSON.stringify({ n: r2.filesIndexed, f: r2.filesFailed, row: r2.poisonRow, h: r2.docsFailedHeader, e: r2.stderr }));
+  check('(mem91) ...the header\'s sourceListing still equals the live listing (no reconcile loop)', r2.listingMatches === true);
+  check('(mem91) ...and checkStaleness does not call it stale (no inline-reindex loop)', r2.staleFiles === 0, `staleFiles=${r2.staleFiles}`);
+  check('(mem91) more than the cap failing REFUSES the build and leaves the previous index byte-identical',
+    typeof r2.refused === 'string' && /documents failed \(cap 3\)/.test(r2.refused) && r2.bytesAfter === r2.bytesGood, String(r2.refused).slice(0, 160));
+  cleanupSandbox(sb2.dir);
+}
+{
+  // ---- 5e: the health surface names a repeated failure, with its error, and clears ------------
+  const sb = sandbox();
+  const logPath = join(sb.dir, 'runs.jsonl');
+  const row = (o) => JSON.stringify(o) + '\n';
+  const T = (m) => new Date(Date.UTC(2026, 8, 20, 12, m)).toISOString();
+  const failedRow = (m, pid) => row({ at: T(m), trigger: 'timed', outcome: 'failed', pid, session: 's1', stage: 'index',
+    error: 'refusing to write the index: doc x-1 (guard) — planted' });
+  const H = pathToFileURL(join(ROOT, 'lib', 'ingest-health.js')).href;
+  const call = (rows, extra = '') => run(sb.env, `
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(${JSON.stringify(logPath)}, ${JSON.stringify(rows)});
+    ${extra}
+    const { captureHealth } = await import(${JSON.stringify(H)});
+    out(captureHealth({ log: ${JSON.stringify(logPath)}, store: process.env.MEMORY_OWN_STORE,
+      vanishLog: process.env.MEMORY_VANISH_LOG, now: Date.parse(${JSON.stringify(T(59))}) }));`);
+  const one = call(row({ at: T(1), trigger: 'timed', outcome: 'started', pid: 11 }) + failedRow(2, 11));
+  check('(mem91) CONTROL — a single failed run is not a streak', one.healthy === true, JSON.stringify(one));
+  const three = call(
+    row({ at: T(0), trigger: 'timed', outcome: 'captured', pid: 10, newExchanges: 2 }) +   // the streak starts AFTER a success
+    row({ at: T(1), trigger: 'timed', outcome: 'started', pid: 11 }) + failedRow(2, 11) +
+    row({ at: T(3), trigger: 'walker', outcome: 'started', pid: 20 }) +
+    row({ at: T(4), trigger: 'timed', outcome: 'skipped', pid: 12, why: 'lock held' }) +
+    row({ at: T(5), trigger: 'timed', outcome: 'started', pid: 13 }) + failedRow(6, 13) +
+    row({ at: T(7), trigger: 'timed', outcome: 'started', pid: 14 }) + failedRow(8, 14));
+  check('(mem91) three failures with skipped rows between → unhealthy, repeatedFailure {count, since, lastError}',
+    three.healthy === false && three.status === 'unhealthy' && three.repeatedFailure && three.repeatedFailure.count === 3 &&
+    three.repeatedFailure.since === T(2) && /planted/.test(three.repeatedFailure.lastError) && three.repeatedFailure.stage === 'index' &&
+    /FAILED 3 consecutive/.test(three.note) && /will NOT fix this/.test(three.note) && /store IS being written/.test(three.note),
+    JSON.stringify(three).slice(0, 400));
+  const walker = call(
+    row({ at: T(1), trigger: 'timed', outcome: 'started', pid: 11 }) + failedRow(2, 11) +
+    row({ at: T(3), trigger: 'walker', outcome: 'finished', pid: 20, reconcile: 'failed', reconcileError: 'refusing to write: planted' }));
+  check('(mem91) ...a walker finished row with reconcile:failed counts, and carries its reconcileError',
+    walker.repeatedFailure && walker.repeatedFailure.count === 2 && walker.repeatedFailure.stage === 'reconcile' &&
+    /planted/.test(walker.repeatedFailure.lastError), JSON.stringify(walker.repeatedFailure));
+  // No success row anywhere in the tail: the streak may be older than the log can see, and the
+  // wording must say so rather than state a count it cannot know.
+  check('(mem91) ...a streak that reaches the top of the log tail is reported as "at least", never as exact',
+    walker.repeatedFailure && walker.repeatedFailure.countIsLowerBound === true && /FAILED at least 2 consecutive/.test(walker.note) &&
+    three.repeatedFailure && three.repeatedFailure.countIsLowerBound === false, JSON.stringify([walker.note, three.repeatedFailure]).slice(0, 300));
+  const cleared = call(
+    row({ at: T(1), trigger: 'timed', outcome: 'started', pid: 11 }) + failedRow(2, 11) + failedRow(3, 12) +
+    row({ at: T(4), trigger: 'timed', outcome: 'captured', pid: 15, newExchanges: 1 }));
+  check('(mem91) ...a later captured row clears it', cleared.healthy === true, JSON.stringify(cleared));
+  // the pending marker: left behind by a failed run, closed by an index built AFTER it
+  const pendingOld = call(row({ at: T(1), trigger: 'timed', outcome: 'captured', pid: 11 }), `
+    const { join } = await import('node:path');
+    writeFileSync(join(process.env.MEMORY_OWN_STORE, '.pending-index.json'), JSON.stringify({ at: ${JSON.stringify(T(10))}, pid: 999999, session: 's1' }));
+    writeFileSync(process.env.MEMORY_STAGING_INDEX, JSON.stringify({ header: { builtAt: ${JSON.stringify(T(20))} }, docs: [] }));`);
+  check('(mem91) ...a pending marker OLDER than the index builtAt is closed, not reported', pendingOld.healthy === true, JSON.stringify(pendingOld));
+  const pendingNew = call(row({ at: T(1), trigger: 'timed', outcome: 'captured', pid: 11 }), `
+    const { join } = await import('node:path');
+    writeFileSync(join(process.env.MEMORY_OWN_STORE, '.pending-index.json'), JSON.stringify({ at: ${JSON.stringify(T(30))}, pid: 999999, session: 's1' }));
+    writeFileSync(process.env.MEMORY_STAGING_INDEX, JSON.stringify({ header: { builtAt: ${JSON.stringify(T(20))} }, docs: [] }));`);
+  check('(mem91) CONTROL — a pending marker NEWER than the index is still reported',
+    pendingNew.healthy === false && !!pendingNew.indexRebuildPending, JSON.stringify(pendingNew).slice(0, 200));
+  cleanupSandbox(sb.dir);
+}
+
+// =============================================================================================
 group('the corpus boundary — a symlink may not leave it');
 {
   const sb = sandbox();

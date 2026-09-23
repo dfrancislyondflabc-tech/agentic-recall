@@ -349,7 +349,8 @@ if (!active.length) {
   const rec = await reconcilePass();
   await runLagCanary();
   walkerFinished({ sessions: 0, deferred: 0, why: 'nothing uncaptured', ...excludedRow,
-    ...(rec ? { reconcile: rec.outcome, ...(rec.reason ? { reconcileReason: rec.reason } : {}) } : {}) });
+    ...(rec ? { reconcile: rec.outcome, ...(rec.reason ? { reconcileReason: rec.reason } : {}),
+      ...(rec.error ? { reconcileError: String(rec.error).slice(0, 300) } : {}) } : {}) });
   process.exit(0);
 }
 
@@ -378,5 +379,8 @@ for (const t of active) {
 // of the index and nobody has looked.
 const rec = await reconcilePass();
 await runLagCanary();
+// The reconcile ERROR rides on the row too (MEM-91): it used to go to stderr only, which for a
+// launchd run is a file in /tmp that a reboot erases and for a server-spawned walker is nowhere.
 walkerFinished({ sessions: active.length, deferred, failed: failedSessions, ...excludedRow,
-  ...(rec ? { reconcile: rec.outcome, ...(rec.reason ? { reconcileReason: rec.reason } : {}) } : {}) });
+  ...(rec ? { reconcile: rec.outcome, ...(rec.reason ? { reconcileReason: rec.reason } : {}),
+    ...(rec.error ? { reconcileError: String(rec.error).slice(0, 300) } : {}) } : {}) });
