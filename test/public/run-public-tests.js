@@ -481,27 +481,28 @@ group('query expansion — off | shadow | on (Daniel\'s ruling 2026-09-22)');
   const PHRASING_HITS = 'pawls light oil bearing grease';                 // the corpus's own words
   const EMPTY = 'what is the airport parking policy for staff cars';      // nothing about this anywhere
   const STRONG = 'Pawls get the light oil, never the thick bearing grease';
-  const sb = sandbox({ MEMORY_QUERY_LOG: join(mkdtempSync(join(tmpdir(), 'recall-qlog-')), 'q.jsonl') });
+  // The hint is OFF by default since 2.1.0; this group exercises it, so it switches it on explicitly.
+  const sb = sandbox({ MEMORY_QUERY_LOG: join(mkdtempSync(join(tmpdir(), 'recall-qlog-')), 'q.jsonl'), MEMORY_REQUERY_HINT: 'on' });
   copyFixtures(sb.env.MEMORY_DIR);
   const r = run(sb.env, `
     await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
     const { search, latest } = await import(SRCH);
     const { readFileSync } = await import('node:fs');
     const strip = (x) => JSON.stringify({ r: (x.results || []).map((q) => [q.name, q.score]), w: (x.bestWeak || []).map((q) => [q.name, q.score]), n: !!x.noStrongMatch, c: x.confidence });
-    const plain = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated' });
-    const plainHit = await search(${JSON.stringify(PHRASING_HITS)}, { scope: 'curated' });
+    const plain = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'off' });
+    const plainHit = await search(${JSON.stringify(PHRASING_HITS)}, { scope: 'curated', expand: 'off' });
     const off = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'off', queries: [${JSON.stringify(PHRASING_HITS)}] });
     const dflt = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', queries: [${JSON.stringify(PHRASING_HITS)}] });
     const bad = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'yes please', queries: [${JSON.stringify(PHRASING_HITS)}] });
     const on = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'on', queries: [${JSON.stringify(PHRASING_HITS)}, ${JSON.stringify(PRIMARY_REFUSES)}, '  '] });
     const onEmpty = await search(${JSON.stringify(EMPTY)}, { scope: 'curated', expand: 'on' });
-    const offEmpty = await search(${JSON.stringify(EMPTY)}, { scope: 'curated' });
-    const strongOff = await search(${JSON.stringify(STRONG)}, { scope: 'curated', limit: 3 });
+    const offEmpty = await search(${JSON.stringify(EMPTY)}, { scope: 'curated', expand: 'off' });
+    const strongOff = await search(${JSON.stringify(STRONG)}, { scope: 'curated', limit: 3, expand: 'off' });
     const strongPlusNonsense = await search(${JSON.stringify(STRONG)}, { scope: 'curated', limit: 3, expand: 'on', queries: ['zzqx quantum flux capacitor'] });
     const strongPlusOther = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 3, expand: 'on', queries: [${JSON.stringify(PHRASING_HITS)}] });
-    const signOffOff = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 3 });
+    const signOffOff = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 3, expand: 'off' });
     const displace = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 1, expand: 'on', queries: ['chain wear limits stretch'] });
-    const displaceOff = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 1 });
+    const displaceOff = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 1, expand: 'off' });
     const shadow = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'shadow', queries: [${JSON.stringify(PHRASING_HITS)}] });
     const shadowEmpty = await search(${JSON.stringify(EMPTY)}, { scope: 'curated', expand: 'shadow' });
     const briefOn = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 3, expand: 'on', brief: true, queries: [${JSON.stringify(PHRASING_HITS)}] });
@@ -510,6 +511,7 @@ group('query expansion — off | shadow | on (Daniel\'s ruling 2026-09-22)');
     const log = readFileSync(process.env.MEMORY_QUERY_LOG, 'utf8').trim().split('\\n').map((l) => JSON.parse(l));
     out({ plain: strip(plain), plainHit: strip(plainHit), off: strip(off), dflt: strip(dflt), bad: strip(bad),
           offKeys: Object.keys(off).filter((k) => ['requeryHint', 'viaVariants', 'expansion'].includes(k)),
+          dfltVia: (dflt.viaVariants?.results || []).length, dfltMode: dflt.expansion?.mode, badMode: bad.expansion?.mode,
           onStrip: strip(on), onVia: (on.viaVariants?.results || []).map((q) => [q.name, q.score, q.matchedVia, q.viaVariantOnly]),
           onViaFull: (on.viaVariants?.results || []).map((q) => ({ name: q.name, alsoBestWeak: q.alsoBestWeak, queryScore: q.queryScore })),
           onViaNote: on.viaVariants?.note, onExp: on.expansion, onHint: on.requeryHint?.terms,
@@ -536,8 +538,11 @@ group('query expansion — off | shadow | on (Daniel\'s ruling 2026-09-22)');
   // ---- off: nothing changes, whatever the caller sends
   check('(expand) off: `queries` are ignored and the response is field-for-field the plain one',
     r.off === r.plain && Array.isArray(r.offKeys) && r.offKeys.length === 0, JSON.stringify([r.offKeys, r.off === r.plain]));
-  check('(expand) off is the DEFAULT — no arg, no env → plain', r.dflt === r.plain);
-  check('(expand) an unrecognised expand value is OFF, never on', r.bad === r.plain);
+  // 2.1.0: ON is the default (Daniel's ruling 2026-09-23). The question as asked is still untouched.
+  check('(expand) ON is the DEFAULT — no arg, no env: results equal the plain call AND the phrasing rows arrive',
+    r.dflt === r.plain && r.dfltVia > 0 && r.dfltMode === 'on', JSON.stringify([r.dflt === r.plain, r.dfltVia, r.dfltMode]));
+  check('(expand) an unrecognised expand value falls back to the configured default, and results are still the plain ones',
+    r.bad === r.plain && r.badMode === 'on', JSON.stringify([r.bad === r.plain, r.badMode]));
   check('(expand) off: an EMPTY result carries no hint, no marker, and no invitation',
     r.offEmptyStrip && JSON.parse(r.offEmptyStrip).n === true && !r.offEmptyGuidance.some((l) => /queries:\[/.test(l)), JSON.stringify(r.offEmptyGuidance));
   // ---- on: the refusal stands; phrasing-only rows are labelled and kept out of results
@@ -612,7 +617,7 @@ group('query expansion — off | shadow | on (Daniel\'s ruling 2026-09-22)');
 }
 {
   // ---- through the real tool surface: env default, per-call override, and the schema's refusals
-  const sb = sandbox({ MEMORY_QUERY_EXPANSION: 'on' });
+  const sb = sandbox({ MEMORY_QUERY_EXPANSION: 'on', MEMORY_REQUERY_HINT: 'on' });
   copyFixtures(sb.env.MEMORY_DIR);
   const r = run(sb.env, `
     await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
@@ -638,6 +643,61 @@ group('query expansion — off | shadow | on (Daniel\'s ruling 2026-09-22)');
   check('(expand) below the schema, more than 4 phrasings are capped at 4 — and the 5th (the useful one) is dropped, so a caller must choose',
     r.cappedVariants === 4 && r.cappedVia === 0, JSON.stringify([r.cappedVariants, r.cappedVia]));
   cleanupSandbox(sb.dir);
+}
+
+{
+  // ---- 2.1.0 DEFAULTS, with no expansion env at all: on, hint hidden; and every way to turn it OFF ----------
+  const sb = sandbox({ MEMORY_QUERY_LOG: join(mkdtempSync(join(tmpdir(), 'recall-qlog-')), 'q.jsonl') });
+  copyFixtures(sb.env.MEMORY_DIR);
+  const EMPTY = 'what is the airport parking policy for staff cars';
+  const STRONG = 'Pawls get the light oil, never the thick bearing grease';
+  const r = run(sb.env, `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const { search } = await import(SRCH);
+    const { readFileSync } = await import('node:fs');
+    const refused = await search(${JSON.stringify(EMPTY)}, { scope: 'curated' });
+    const answered = await search(${JSON.stringify(STRONG)}, { scope: 'curated', limit: 3 });
+    const answeredOff = await search(${JSON.stringify(STRONG)}, { scope: 'curated', limit: 3, expand: 'off' });
+    const refusedOff = await search(${JSON.stringify(EMPTY)}, { scope: 'curated', expand: 'off' });
+    const refusedOffQ = await search(${JSON.stringify(EMPTY)}, { scope: 'curated', expand: 'off', queries: ['tyre sealant pressure'] });
+    const log = readFileSync(process.env.MEMORY_QUERY_LOG, 'utf8').trim().split('\\n').map((l) => JSON.parse(l));
+    const keys = (x) => Object.keys(x).filter((k) => ['requeryHint', 'viaVariants', 'expansion'].includes(k));
+    out({ refusedKeys: keys(refused), refusedMode: refused.expansion?.mode, refusedHintFlag: refused.expansion?.hint,
+          invite: (refused.guidance || []).filter((l) => /queries:\\[/.test(l)).length,
+          answeredKeys: keys(answered), answeredSame: JSON.stringify(answered.results.map((x) => [x.name, x.score])) === JSON.stringify(answeredOff.results.map((x) => [x.name, x.score])),
+          offKeys: [...keys(refusedOff), ...keys(refusedOffQ), ...keys(answeredOff)], offInvite: [...(refusedOff.guidance || []), ...(refusedOffQ.guidance || [])].filter((l) => /queries:\\[/.test(l)).length,
+          loggedHint: log.filter((x) => x.expansion && x.expansion.hintTerms).length, offLogged: log.filter((x) => x.expansion && x.expansion.mode === 'off').length,
+          expansionRows: log.filter((x) => x.expansion).length, rows: log.length });`);
+  check('(expand) default, no env: a refused question invites a rephrased retry and says mode on — but carries NO requeryHint',
+    r.refusedMode === 'on' && r.invite === 1 && Array.isArray(r.refusedKeys) && !r.refusedKeys.includes('requeryHint') && r.refusedHintFlag === false,
+    JSON.stringify([r.refusedKeys, r.refusedMode, r.invite, r.refusedHintFlag, r.stderr]));
+  check('(expand) default, no env: an answered search with no queries gains NOTHING (no key, same rows and scores)',
+    Array.isArray(r.answeredKeys) && r.answeredKeys.length === 0 && r.answeredSame === true, JSON.stringify([r.answeredKeys, r.answeredSame]));
+  check('(expand) ...the hidden hint is still computed and LOGGED, so it can be re-measured', r.loggedHint >= 1, JSON.stringify(r.loggedHint));
+  check('(expand) expand:off turns the feature OFF COMPLETELY — no field, no invitation, no log record, phrasings ignored',
+    Array.isArray(r.offKeys) && r.offKeys.length === 0 && r.offInvite === 0 && r.offLogged === 0 && r.expansionRows === 2,
+    JSON.stringify([r.offKeys, r.offInvite, r.offLogged, r.expansionRows, r.rows]));
+  cleanupSandbox(sb.dir);
+}
+{
+  // ---- the two persistent OFF switches: env and local-config ----
+  const sbE = sandbox({ MEMORY_QUERY_EXPANSION: 'off' });
+  copyFixtures(sbE.env.MEMORY_DIR);
+  const probe = `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const { search } = await import(SRCH);
+    const x = await search('what is the airport parking policy for staff cars', { scope: 'curated', queries: ['tyre sealant pressure'] });
+    out({ keys: Object.keys(x).filter((k) => ['requeryHint', 'viaVariants', 'expansion'].includes(k)), invite: (x.guidance || []).filter((l) => /queries:\\[/.test(l)).length });`;
+  const rE = run(sbE.env, probe);
+  check('(expand) MEMORY_QUERY_EXPANSION=off turns it off for every call', Array.isArray(rE.keys) && rE.keys.length === 0 && rE.invite === 0, JSON.stringify([rE.keys, rE.invite, rE.stderr]));
+  cleanupSandbox(sbE.dir);
+  const sbC = sandbox({ MEMORY_ROOT: undefined });
+  copyFixtures(sbC.env.MEMORY_DIR);
+  const envC = { ...sbC.env, MEMORY_ROOT: sbC.dir }; delete envC.MEMORY_QUERY_EXPANSION;
+  writeFileSync(join(sbC.dir, 'local-config.json'), JSON.stringify({ queryExpansion: 'off' }));
+  const rC = run(envC, probe);
+  check('(expand) local-config.json queryExpansion:"off" turns it off without any env', Array.isArray(rC.keys) && rC.keys.length === 0 && rC.invite === 0, JSON.stringify([rC.keys, rC.invite, rC.stderr]));
+  cleanupSandbox(sbC.dir);
 }
 
 // =============================================================================================

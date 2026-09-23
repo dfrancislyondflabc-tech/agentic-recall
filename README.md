@@ -531,14 +531,23 @@ Measured on the reporting caller's own query against the same corpora, read-only
 after: **56,634 → 26,842 bytes**, and **17,123 with `brief: true`**. The ten ranked rows are 12,426
 bytes of that, in both runs — they are the answer, and they are what is left.
 
-### Query expansion — `queries?`, `expand?` (off by default)
+### Query expansion — `queries?`, `expand?` (on by default since 2.1.0; can be turned off completely)
 
-A three-position switch: `off` | `shadow` | `on`. Set it with `MEMORY_QUERY_EXPANSION`, with
-`queryExpansion` in `local-config.json`, or per call with `expand` (`true`/`false` also work). An
-unknown value falls back to the configured mode, never to `on`. `latest` ignores both arguments.
+A three-position switch: `on` (default) | `shadow` | `off`. `latest` ignores it.
 
-The server never invents synonyms and never re-queries on its own — the caller owns the guessing.
-What `on` adds is the two things a caller cannot do alone:
+**To turn it off completely**, any one of these (the first that is set wins):
+- per call: `expand: "off"` (or `false`)
+- for the server: `MEMORY_QUERY_EXPANSION=off` in the connector's `env`
+- for the machine: `"queryExpansion": "off"` in `local-config.json`
+
+`off` adds nothing to any response and writes nothing to the log. An unknown value falls back to the
+default.
+
+**How it is meant to be used: search first, rephrase only on a miss.** The server never invents
+synonyms and never re-queries by itself; the caller owns the guessing. A first search is sent with
+`query` alone and costs exactly what it did before. If that search is refused, the response invites
+a second try. If it answered but the rows do not actually answer the question, the caller judges
+that and tries again the same way:
 
 - **`queries: [...]`** — up to 4 alternative phrasings of the same question, ranked in one call
   beside `query`. Each is judged on its own words; a phrasing that refuses adds nothing. `results`
@@ -550,14 +559,24 @@ What `on` adds is the two things a caller cannot do alone:
   stays true and `results` stays empty, whatever the phrasings found. Read a `viaVariants` row
   before relying on it, and say it came from a rephrasing. On a bm25-only index expansion does
   nothing and says why.
-- **`requeryHint`** on an empty result — 3 to 6 words the nearest documents (`bestWeak`) use and the
-  query did not, taken from their names, headings and descriptions and present in this index. The
-  corpus's own vocabulary for the topic nearby, offered as leads for one more try.
+
+Why the second try is left to the caller: the server cannot see a miss. In the evaluation below,
+15 of 17 wrong answers came back at `confidence: high`, so a server-side "retry when unsure" rule
+would have kept only 2 of the 7 recoveries.
+
+**Measured on a real 4,700-document corpus** (pre-registered; 90 answerable questions written by agents
+that never searched, 20 absent controls): with 3 phrasings, 7 of the 20 questions the first search
+missed were recovered into `viaVariants`, 0 results changed, 0 controls answered because of it.
+Cost per call with phrasings: ~+50 ms on 500 documents, ~+370 ms on 4,200, ~+1.6K tokens. A first
+search with no phrasings costs nothing extra.
+
+**`requeryHint` is off by default.** On an empty result it lists words the nearest documents use and
+the query did not. It pointed at the right memory 0 times in 3 real refusals, because on a true
+absence the nearest documents are the wrong ones. It is still computed and logged; turn it on with
+`MEMORY_REQUERY_HINT=on` or `"requeryHint": "on"` in `local-config.json`.
 
 `shadow` computes all of this, records it on the query-log row (`expansion`, redacted like `q`),
-and returns the unexpanded baseline plus an `expansion: {mode: "shadow"}` marker; on an empty
-result it invites `queries:[…]` without handing over the hint terms, so a before/after comparison
-can be read from the log. `off` adds nothing to the response or the log.
+and returns the unexpanded baseline plus an `expansion: {mode: "shadow"}` marker.
 
 ### `memory({action: "latest", query, limit?, scope?, sessionId?, account?, project?})`
 
@@ -1735,7 +1754,8 @@ Nothing here is a hard limit; they are the numbers, so you can decide.
 | `MEMORY_FIRST_BUILD_MAX` | `40` files — a corpus with no index at all is built inline up to this size, and reported stale over it |
 | `MEMORY_MODEL_CACHE` | `./.model-cache` |
 | `MEMORY_INLINE_REINDEX` | `1` — `0` keeps the staleness check and the stamp, drops the inline rebuild |
-| `MEMORY_QUERY_EXPANSION` | `off` — `shadow` computes the requery hint and fused phrasings, logs them, returns the baseline; `on` returns them. Also `queryExpansion` in `local-config.json`; the per-call `expand` argument wins. An unknown value is `off` |
+| `MEMORY_QUERY_EXPANSION` | `on` — `off` turns query expansion off completely (nothing added, nothing logged); `shadow` computes and logs it but returns the baseline. Also `queryExpansion` in `local-config.json`; the per-call `expand` argument wins |
+| `MEMORY_REQUERY_HINT` | `off` — `on` returns the requery hint on refused searches (measured 0/3 useful; still logged when off). Also `requeryHint` in `local-config.json` |
 | `MEMORY_AUTO_INGEST` | *(unset)* — `0` never captures a session, `always`/`1` always does. Unset means "capture the sessions the connector was on for". **A hook inherits no environment**, so for a permanent setting use `local-config.json` (`autoIngest` / `captureAlways`); this var is for a one-off manual run |
 | `MEMORY_INGEST_SINCE_MINUTES` | *(unset)* — limit a capture to the last N minutes. Set for you by `memory_write({action: "capture", sinceMinutes})`. The window is measured against each exchange's **last activity**, not the moment its question was asked, so a turn that has been running longer than the window is still inside it |
 | `MEMORY_INFLIGHT_QUIET_MIN` | `10` — minutes of transcript silence after which a **timed** walk captures the in-flight exchange instead of deferring it (`0` never defers, `off` always does). Only reached when the last assistant record does not carry `stop_reason: end_turn`/`stop_sequence`; a turn that says it stopped is captured on the next tick regardless. The hook never defers, whatever this says |

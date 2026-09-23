@@ -317,17 +317,17 @@ try {
   console.log(`  info  absence signals: ${JSON.stringify(ar.signals)}`);
 
   // ---- tools/call: query expansion over the wire (off | shadow | on, 2026-09-22) ----
-  // OFF is the default and must leave the response untouched — no marker, no hint. ON must hand
-  // over the corpus's own vocabulary on an empty result. And the SCHEMA, not the handler, is what
-  // refuses a mode it does not know and more than four phrasings: the public suite can only reach
-  // the handler, so the wire is checked here.
-  check('expansion is OFF by default: the absent-query response carries no expansion marker and no hint',
-    !('expansion' in ar) && !('requeryHint' in ar) && !('viaVariants' in ar), Object.keys(ar).filter((k) => /expansion|requeryHint|viaVariants/.test(k)).join(','));
-  const ex = await rpc('tools/call', { name: 'memory', arguments: { action: 'search', query: 'which Kubernetes cluster runs the deal tracker', limit: 3, expand: 'on' } });
+  // 2.1.0: ON is the default, the requery hint is HIDDEN by default, and expand:"off" removes every
+  // trace. The SCHEMA, not the handler, is what refuses a mode it does not know and more than four
+  // phrasings: the public suite can only reach the handler, so the wire is checked here.
+  check('expansion is ON by default over stdio: the refusal stands, it invites a rephrased retry, and carries NO hint',
+    ar.expansion?.mode === 'on' && !('requeryHint' in ar) && (ar.guidance || []).some((l) => /queries:\[/.test(l)),
+    JSON.stringify({ expansion: ar.expansion, keys: Object.keys(ar).filter((k) => /expansion|requeryHint|viaVariants/.test(k)) }).slice(0, 200));
+  const ex = await rpc('tools/call', { name: 'memory', arguments: { action: 'search', query: 'which Kubernetes cluster runs the deal tracker', limit: 3, expand: 'off' } });
   const exr = payload(ex);
-  check('expand:"on" over stdio: the refusal stands and a requeryHint with corpus words arrives',
-    exr.noStrongMatch === true && exr.results.length === 0 && Array.isArray(exr.requeryHint?.terms) && exr.requeryHint.terms.length >= 1 && exr.expansion?.mode === 'on',
-    JSON.stringify({ hint: exr.requeryHint?.terms, expansion: exr.expansion }).slice(0, 200));
+  check('expand:"off" over stdio turns the feature off completely: no marker, no hint, no invitation',
+    exr.noStrongMatch === true && !('expansion' in exr) && !('requeryHint' in exr) && !(exr.guidance || []).some((l) => /queries:\[/.test(l)),
+    JSON.stringify({ keys: Object.keys(exr).filter((k) => /expansion|requeryHint|viaVariants/.test(k)) }).slice(0, 200));
   const badMode = await rpc('tools/call', { name: 'memory', arguments: { action: 'search', query: 'anything', expand: 'yes' } });
   check('the schema refuses an expand value it does not know (never a silent "on")', badMode.result?.isError === true || badMode.error, JSON.stringify(badMode).slice(0, 140));
   const tooMany = await rpc('tools/call', { name: 'memory', arguments: { action: 'search', query: 'anything', queries: ['a', 'b', 'c', 'd', 'e'] } });

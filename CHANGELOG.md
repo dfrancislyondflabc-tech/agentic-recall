@@ -10,6 +10,30 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [2.1.0] — 2026-09-23
+
+### Changed
+
+- **Query expansion is ON by default** (was `off`), and can still be turned off completely:
+  `expand: "off"` per call, `MEMORY_QUERY_EXPANSION=off`, or `"queryExpansion": "off"` in
+  `local-config.json` — `off` adds nothing to a response and nothing to the log.
+  What `on` does by default costs nothing on an ordinary search: it ranks `queries` only when a caller
+  sends them, and invites a rephrased second try only when the question as asked was refused. The
+  `queries` description now says to send phrasings on a second try, after a miss — not on every search.
+  Ranking is unchanged: the 46-query snapshot with expansion off is byte-identical to 2.0.3's, and with
+  the new default it differs only by the retry invitation and the `expansion` marker on 7 refused queries.
+- **`requeryHint` is OFF by default** inside `on`. Still computed and logged; `MEMORY_REQUERY_HINT=on` /
+  `"requeryHint": "on"` returns it.
+
+**Why, measured** (pre-registered evaluation on the author's corpus, 2026-09-23; 90 answerable
+questions + 20 absent controls, written by agents that never searched): hybrid MRR 0.67 (easy 0.93,
+deep 0.70, hard paraphrases 0.47). With 3 phrasings, 7 of the 20 first-search misses were recovered
+into `viaVariants` (35 %), with 0 results changed and 0 control answers caused. The hint pointed at the
+right memory 0 of 3 times. 15 of the 17 wrong answers came back at `confidence: high`, so the server
+cannot tell a miss — the second try has to be the caller's judgement, which is why phrasings are for a
+retry rather than every call. Cost per call with phrasings: ~+50 ms (500 docs), ~+370 ms (4,200 docs),
+~+1.6K tokens.
+
 ## [2.0.3] — 2026-09-22
 
 One defect, one fix, and the class it belongs to — and one new, switchable retrieval feature that
