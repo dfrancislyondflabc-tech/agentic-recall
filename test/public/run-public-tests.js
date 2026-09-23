@@ -466,6 +466,181 @@ const OLD_URL_RE = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]*):(?!\/\/)(?!\[REDACTED[
 }
 
 // =============================================================================================
+group('query expansion — off | shadow | on (Daniel\'s ruling 2026-09-22)');
+// THE CONTRACT. `off` (the default) must be byte-identical to a server that never heard of this
+// feature — the ranking snapshot pins 46 queries, these pin the fields. `on` may add rows a
+// phrasing reached and the corpus's own vocabulary on an empty result, but it may NEVER turn the
+// primary query's refusal into an answer: phrasing-only rows go under viaVariants. `shadow`
+// computes everything, logs it, and returns the baseline plus a marker.
+//
+// Fixtures are chosen from the gold corpus and CHECKED here, so a corpus change cannot silently
+// turn these into tests of nothing: the primary below must refuse on its own, and the phrasing
+// must hit on its own.
+{
+  const PRIMARY_REFUSES = 'lubricant choice for the ratchet teeth';      // no pawls/grease/oil vocabulary
+  const PHRASING_HITS = 'pawls light oil bearing grease';                 // the corpus's own words
+  const EMPTY = 'what is the airport parking policy for staff cars';      // nothing about this anywhere
+  const STRONG = 'Pawls get the light oil, never the thick bearing grease';
+  const sb = sandbox({ MEMORY_QUERY_LOG: join(mkdtempSync(join(tmpdir(), 'recall-qlog-')), 'q.jsonl') });
+  copyFixtures(sb.env.MEMORY_DIR);
+  const r = run(sb.env, `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const { search, latest } = await import(SRCH);
+    const { readFileSync } = await import('node:fs');
+    const strip = (x) => JSON.stringify({ r: (x.results || []).map((q) => [q.name, q.score]), w: (x.bestWeak || []).map((q) => [q.name, q.score]), n: !!x.noStrongMatch, c: x.confidence });
+    const plain = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated' });
+    const plainHit = await search(${JSON.stringify(PHRASING_HITS)}, { scope: 'curated' });
+    const off = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'off', queries: [${JSON.stringify(PHRASING_HITS)}] });
+    const dflt = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', queries: [${JSON.stringify(PHRASING_HITS)}] });
+    const bad = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'yes please', queries: [${JSON.stringify(PHRASING_HITS)}] });
+    const on = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'on', queries: [${JSON.stringify(PHRASING_HITS)}, ${JSON.stringify(PRIMARY_REFUSES)}, '  '] });
+    const onEmpty = await search(${JSON.stringify(EMPTY)}, { scope: 'curated', expand: 'on' });
+    const offEmpty = await search(${JSON.stringify(EMPTY)}, { scope: 'curated' });
+    const strongOff = await search(${JSON.stringify(STRONG)}, { scope: 'curated', limit: 3 });
+    const strongPlusNonsense = await search(${JSON.stringify(STRONG)}, { scope: 'curated', limit: 3, expand: 'on', queries: ['zzqx quantum flux capacitor'] });
+    const strongPlusOther = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 3, expand: 'on', queries: [${JSON.stringify(PHRASING_HITS)}] });
+    const signOffOff = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 3 });
+    const displace = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 1, expand: 'on', queries: ['chain wear limits stretch'] });
+    const displaceOff = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 1 });
+    const shadow = await search(${JSON.stringify(PRIMARY_REFUSES)}, { scope: 'curated', expand: 'shadow', queries: [${JSON.stringify(PHRASING_HITS)}] });
+    const shadowEmpty = await search(${JSON.stringify(EMPTY)}, { scope: 'curated', expand: 'shadow' });
+    const briefOn = await search('who is allowed to sign off a bike before it goes on sale', { scope: 'curated', limit: 3, expand: 'on', brief: true, queries: [${JSON.stringify(PHRASING_HITS)}] });
+    const all = await search(${JSON.stringify(EMPTY)}, { scope: ['curated', 'staging'], expand: 'on' });
+    const lat = await latest(${JSON.stringify(PHRASING_HITS)}, { scope: 'curated', expand: 'on', queries: ['anything'] });
+    const log = readFileSync(process.env.MEMORY_QUERY_LOG, 'utf8').trim().split('\\n').map((l) => JSON.parse(l));
+    out({ plain: strip(plain), plainHit: strip(plainHit), off: strip(off), dflt: strip(dflt), bad: strip(bad),
+          offKeys: Object.keys(off).filter((k) => ['requeryHint', 'viaVariants', 'expansion'].includes(k)),
+          onStrip: strip(on), onVia: (on.viaVariants?.results || []).map((q) => [q.name, q.score, q.matchedVia, q.viaVariantOnly]),
+          onViaFull: (on.viaVariants?.results || []).map((q) => ({ name: q.name, alsoBestWeak: q.alsoBestWeak, queryScore: q.queryScore })),
+          onViaNote: on.viaVariants?.note, onExp: on.expansion, onHint: on.requeryHint?.terms,
+          onEmptyHint: onEmpty.requeryHint, onEmptyExp: onEmpty.expansion, onEmptyStrip: strip(onEmpty), offEmptyStrip: strip(offEmpty),
+          onEmptyGuidance: onEmpty.guidance, offEmptyGuidance: offEmpty.guidance || [],
+          weakDocs: (onEmpty.bestWeak || []).map((q) => q.name),
+          idxDocs: JSON.parse(readFileSync(process.env.MEMORY_INDEX, 'utf8')).docs.map((d) => ({ name: d.name, text: [d.name.replace(/[-_]/g,' '), ...(d.headings||[]), d.description||''].join(' ').toLowerCase() })),
+          strongOff: strip(strongOff), strongPlusNonsense: strip(strongPlusNonsense),
+          nonsenseVia: (strongPlusNonsense.results || []).map((q) => q.matchedVia),
+          strongPlusOther: (strongPlusOther.results || []).map((q) => [q.name, q.matchedVia, !!q.viaVariantOnly]), strongPlusOtherExp: strongPlusOther.expansion,
+          strongPlusOtherStrip: strip(strongPlusOther), signOffOff: strip(signOffOff),
+          strongPlusOtherVia: (strongPlusOther.viaVariants?.results || []).map((q) => [q.name, q.score, q.queryScore, q.matchedVia]),
+          strongPlusOtherGuide: (strongPlusOther.guidance || []).filter((l) => /viaVariants/.test(l)).length,
+          displace: strip(displace), displaceOff: strip(displaceOff), displaceTopSig: displace.signals?.topScore, displaceTop: displace.results?.[0]?.score,
+          shadowStrip: strip(shadow), shadowKeys: Object.keys(shadow).filter((k) => ['requeryHint', 'viaVariants'].includes(k)), shadowExp: shadow.expansion,
+          shadowEmptyExp: shadowEmpty.expansion, shadowEmptyGuidance: shadowEmpty.guidance, shadowEmptyHint: shadowEmpty.requeryHint,
+          briefRows: (briefOn.results || []).map((q) => Object.keys(q)),
+          allCurHint: all.groups?.curated?.requeryHint?.terms, allCurExp: all.groups?.curated?.expansion,
+          latKeys: Object.keys(lat).filter((k) => ['requeryHint', 'viaVariants', 'expansion'].includes(k)), latOk: Array.isArray(lat.results),
+          logExp: log.filter((row) => row.expansion).map((row) => ({ q: row.q, mode: row.expansion.mode, variants: row.expansion.variants, hint: row.expansion.hintTerms, per: row.expansion.perVariant, only: row.expansion.variantOnly })) });`);
+  // ---- the premises, so nothing below is vacuous
+  check('(expand) PREMISE — the primary refuses on its own', r.plain && JSON.parse(r.plain).n === true, r.plain);
+  check('(expand) PREMISE — the phrasing hits on its own', r.plainHit && JSON.parse(r.plainHit).n === false && JSON.parse(r.plainHit).r[0][0] === 'grease-rule-pawls', r.plainHit);
+  // ---- off: nothing changes, whatever the caller sends
+  check('(expand) off: `queries` are ignored and the response is field-for-field the plain one',
+    r.off === r.plain && Array.isArray(r.offKeys) && r.offKeys.length === 0, JSON.stringify([r.offKeys, r.off === r.plain]));
+  check('(expand) off is the DEFAULT — no arg, no env → plain', r.dflt === r.plain);
+  check('(expand) an unrecognised expand value is OFF, never on', r.bad === r.plain);
+  check('(expand) off: an EMPTY result carries no hint, no marker, and no invitation',
+    r.offEmptyStrip && JSON.parse(r.offEmptyStrip).n === true && !r.offEmptyGuidance.some((l) => /queries:\[/.test(l)), JSON.stringify(r.offEmptyGuidance));
+  // ---- on: the refusal stands; phrasing-only rows are labelled and kept out of results
+  check('(expand) on: a refused primary STAYS refused — results empty, noStrongMatch true, bestWeak as before',
+    r.onStrip && JSON.parse(r.onStrip).n === true && JSON.parse(r.onStrip).r.length === 0 &&
+    JSON.stringify(JSON.parse(r.onStrip).w) === JSON.stringify(JSON.parse(r.plain).w), r.onStrip);
+  check('(expand) on: rows the phrasing reached come back under viaVariants, sorted, labelled, and NOT as answers',
+    Array.isArray(r.onVia) && r.onVia.length >= 2 && r.onVia[0][0] === 'grease-rule-pawls' &&
+    r.onVia.every((v, i, a) => (i === 0 || a[i - 1][1] >= v[1]) && v[3] === true && JSON.stringify(v[2]) === '["queries[0]"]') &&
+    /rephrasing/.test(String(r.onViaNote)) && /alsoBestWeak/.test(String(r.onViaNote)), JSON.stringify([r.onVia, r.onViaNote]));
+  check('(expand) on: a phrasing-only row that was already bestWeak[0] is marked alsoBestWeak and carries the question\'s own low queryScore',
+    Array.isArray(r.onViaFull) && r.onViaFull.some((v) => v.name === 'grease-rule-pawls' && v.alsoBestWeak === true && typeof v.queryScore === 'number' && v.queryScore < 0.38),
+    JSON.stringify(r.onViaFull));
+  check('(expand) on: a phrasing equal to the primary and a blank one are dropped (variants counted = 1)',
+    r.onExp && r.onExp.mode === 'on' && r.onExp.variants === 1, JSON.stringify(r.onExp));
+  // ---- on: the corpus's own vocabulary on an empty result
+  {
+    const terms = r.onEmptyHint?.terms || [];
+    const qWords = new Set(EMPTY.toLowerCase().split(/\W+/));
+    const inWeakDoc = (t) => (r.idxDocs || []).filter((d) => (r.weakDocs || []).includes(d.name)).some((d) => d.text.includes(t));
+    check('(expand) on: an empty result carries requeryHint — 3..6 corpus words, none of them from the query',
+      terms.length >= 3 && terms.length <= 6 && terms.every((t) => !qWords.has(t)), JSON.stringify(terms));
+    check('(expand) ...every hint term is a word of a bestWeak document\'s name, headings or description',
+      terms.length > 0 && terms.every(inWeakDoc), JSON.stringify([terms, r.weakDocs]));
+    check('(expand) ...the hint names the nearest documents\' vocabulary (sealant/tubeless/tyre for the bike corpus), not prose filler',
+      ['sealant', 'tubeless', 'tyre', 'pressure'].filter((w) => terms.includes(w)).length >= 2, JSON.stringify(terms));
+    check('(expand) ...the verdict itself is unchanged by the hint', r.onEmptyStrip === r.offEmptyStrip);
+    check('(expand) ...and the guidance carries the hint note ONCE, inviting `queries:[…]`',
+      Array.isArray(r.onEmptyGuidance) && r.onEmptyGuidance.filter((l) => /queries:\[/.test(l)).length === 1 &&
+      r.onEmptyGuidance.some((l) => /LEADS, not answers/.test(l)) && r.onEmptyExp && r.onEmptyExp.hint === true, JSON.stringify(r.onEmptyGuidance));
+  }
+  // ---- on: a strong primary keeps its rows; a phrasing can add, a refusing phrasing adds nothing
+  check('(expand) on: a phrasing that itself refuses adds NOTHING — rows equal the plain top-3, each matchedVia ["query"]',
+    r.strongPlusNonsense === r.strongOff && Array.isArray(r.nonsenseVia) && r.nonsenseVia.every((v) => JSON.stringify(v) === '["query"]'),
+    JSON.stringify([r.strongOff, r.strongPlusNonsense, r.nonsenseVia]));
+  // `results` ARE THE QUESTION AS ASKED. A strong phrasing never lifts a row into them: its rows go
+  // under viaVariants with the score the original question gave them. (The first cut merged them in,
+  // and an unrelated phrasing at limit:1 pushed the real answer out — adversarial test 2026-09-22.)
+  check('(expand) on: a strong phrasing does NOT change results — same rows and scores as the plain call, each labelled ["query"]',
+    r.strongPlusOtherStrip === r.signOffOff && Array.isArray(r.strongPlusOther) && r.strongPlusOther.length === 3 &&
+    r.strongPlusOther.every(([, via, only]) => JSON.stringify(via) === '["query"]' && only === false) && r.strongPlusOtherExp?.mode === 'on',
+    JSON.stringify([r.strongPlusOther, r.strongPlusOtherStrip === r.signOffOff]));
+  check('(expand) on: ...its rows come back under viaVariants with queryScore (what the question as asked gave them), and the guidance says so',
+    Array.isArray(r.strongPlusOtherVia) && r.strongPlusOtherVia.some(([n, sc, qs, via]) => n === 'grease-rule-pawls' && sc > 0.5 && typeof qs === 'number' && qs < sc && JSON.stringify(via) === '["queries[0]"]') &&
+    r.strongPlusOtherGuide === 1, JSON.stringify([r.strongPlusOtherVia, r.strongPlusOtherGuide]));
+  check('(expand) on: an unrelated strong phrasing at limit:1 cannot DISPLACE the real answer, and signals.topScore still describes results[0]',
+    r.displace === r.displaceOff && r.displaceTopSig === r.displaceTop, JSON.stringify([r.displace, r.displaceOff, r.displaceTopSig, r.displaceTop]));
+  check('(expand) brief:true keeps matchedVia on the trimmed rows',
+    Array.isArray(r.briefRows) && r.briefRows.length > 0 && r.briefRows.every((ks) => ks.includes('matchedVia')), JSON.stringify(r.briefRows));
+  // ---- shadow: computed, logged, results unchanged
+  check('(expand) shadow: results and verdict equal the plain response; no requeryHint/viaVariants fields; marker says SHADOW',
+    r.shadowStrip === r.plain && Array.isArray(r.shadowKeys) && r.shadowKeys.length === 0 && r.shadowExp && r.shadowExp.mode === 'shadow' &&
+    r.shadowExp.variants === 1 && /unexpanded baseline/.test(r.shadowExp.note), JSON.stringify([r.shadowKeys, r.shadowExp]));
+  check('(expand) shadow: an empty result invites phrasings WITHOUT handing over the hint terms',
+    r.shadowEmptyExp && r.shadowEmptyExp.mode === 'shadow' && r.shadowEmptyExp.hintComputed === true && r.shadowEmptyHint === undefined &&
+    Array.isArray(r.shadowEmptyGuidance) && r.shadowEmptyGuidance.some((l) => /queries:\[/.test(l)) && !r.shadowEmptyGuidance.some((l) => /LEADS, not answers/.test(l)),
+    JSON.stringify([r.shadowEmptyExp, r.shadowEmptyGuidance]));
+  {
+    const rows = r.logExp || [];
+    const sh = rows.find((x) => x.mode === 'shadow' && x.variants && x.variants.length === 1);
+    const shE = rows.find((x) => x.mode === 'shadow' && x.hint);
+    check('(expand) the query log carries the shadow record: phrasings, per-phrasing verdicts, phrasing-only rows',
+      !!sh && sh.per && sh.per[0].noStrongMatch === false && Array.isArray(sh.only) && sh.only.some((x) => x.name === 'grease-rule-pawls' && typeof x.queryScore === 'number'), JSON.stringify(sh));
+    check('(expand) ...and the hint terms for the empty shadow call — the paired comparison has its data',
+      !!shE && shE.hint.length >= 3, JSON.stringify(shE));
+    check('(expand) ...and NO expansion record for the off calls', rows.every((x) => x.mode !== 'off') && rows.length >= 3, JSON.stringify(rows.map((x) => x.mode)));
+  }
+  // ---- wrappers and the other read action
+  check('(expand) scope:[…]: the hint survives into the group that refused', Array.isArray(r.allCurHint) && r.allCurHint.length >= 3 && r.allCurExp?.mode === 'on', JSON.stringify([r.allCurHint, r.allCurExp]));
+  check('(expand) latest ignores `queries`/`expand` and answers normally', r.latOk === true && Array.isArray(r.latKeys) && r.latKeys.length === 0, JSON.stringify(r.latKeys));
+  cleanupSandbox(sb.dir);
+}
+{
+  // ---- through the real tool surface: env default, per-call override, and the schema's refusals
+  const sb = sandbox({ MEMORY_QUERY_EXPANSION: 'on' });
+  copyFixtures(sb.env.MEMORY_DIR);
+  const r = run(sb.env, `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const tool = await memoryTool();
+    const envOn = await tool({ action: 'search', query: 'what is the airport parking policy for staff cars', scope: 'curated' });
+    const callOff = await tool({ action: 'search', query: 'what is the airport parking policy for staff cars', scope: 'curated', expand: false });
+    const viaTool = await tool({ action: 'search', query: 'lubricant choice for the ratchet teeth', scope: 'curated', queries: ['pawls light oil bearing grease'] });
+    // The shim calls the handler DIRECTLY, below zod — so this is the handler's own lenience: an
+    // unknown mode falls back to the configured one, never to 'on'; more than 4 phrasings are capped.
+    // The WIRE refuses both (scripts/verify-stdio.js checks that over real stdio).
+    const lenient = await tool({ action: 'search', query: 'what is the airport parking policy for staff cars', scope: 'curated', expand: 'yes' });
+    const capped = await tool({ action: 'search', query: 'lubricant choice for the ratchet teeth', scope: 'curated', queries: ['a','b','c','d','pawls light oil bearing grease'] });
+    out({ envOnHint: envOn.requeryHint?.terms, envOnExp: envOn.expansion, callOffKeys: Object.keys(callOff).filter((k) => ['requeryHint','expansion'].includes(k)),
+          via: (viaTool.viaVariants?.results || []).map((q) => q.name), viaN: viaTool.noStrongMatch,
+          lenientMode: lenient.expansion?.mode, cappedVariants: capped.expansion?.variants, cappedVia: (capped.viaVariants?.results || []).length });`);
+  check('(expand) MEMORY_QUERY_EXPANSION=on turns it on for every call (env → local-config → off)',
+    Array.isArray(r.envOnHint) && r.envOnHint.length >= 3 && r.envOnExp?.mode === 'on', JSON.stringify([r.envOnHint, r.envOnExp, r.stderr]));
+  check('(expand) a per-call expand:false overrides the env', Array.isArray(r.callOffKeys) && r.callOffKeys.length === 0, JSON.stringify(r.callOffKeys));
+  check('(expand) through the tool handler, phrasing-only rows arrive under viaVariants and the refusal stands',
+    Array.isArray(r.via) && r.via[0] === 'grease-rule-pawls' && r.viaN === true, JSON.stringify([r.via, r.viaN]));
+  check('(expand) below the schema, an unknown expand value falls back to the CONFIGURED mode (env on here), never silently elsewhere',
+    r.lenientMode === 'on', JSON.stringify(r.lenientMode));
+  check('(expand) below the schema, more than 4 phrasings are capped at 4 — and the 5th (the useful one) is dropped, so a caller must choose',
+    r.cappedVariants === 4 && r.cappedVia === 0, JSON.stringify([r.cappedVariants, r.cappedVia]));
+  cleanupSandbox(sb.dir);
+}
+
+// =============================================================================================
 group('the corpus boundary — a symlink may not leave it');
 {
   const sb = sandbox();

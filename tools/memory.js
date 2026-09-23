@@ -118,11 +118,14 @@ function routeScope(query) {
   return { scope: 'curated', why: 'default' };
 }
 
-async function doSearch({ query, limit, scope, sessionId, after, before, near, account, project, maxChars, brief }) {
+async function doSearch({ query, limit, scope, sessionId, after, before, near, account, project, maxChars, brief, queries, expand }) {
   if (!query || !query.trim()) throw new Error('search requires a non-empty `query`');
   const routed = scope ? { scope: validateScope(scope), why: 'caller-specified' } : routeScope(query);
   const res = await search(query, {
     limit: limit ?? undefined,
+    // Query expansion (off | shadow | on). Both optional; lib/search.js resolves the mode.
+    queries: Array.isArray(queries) ? queries : undefined,
+    expand: expand ?? undefined,
     scope: routed.scope,
     sessionId: sessionId ?? null,
     account: account ?? null,
@@ -1346,6 +1349,12 @@ const MEMORY_ARGS = {
   offset: z.number().int().min(0).optional().describe('get: start the body at this character offset, to continue a previous slice.'),
   includeSummaries: z.boolean().optional().describe('latest: context-compaction summary exchanges are DEMOTED by default — still returned, but sorted after ordinary sources, because they restate a whole conversation (matching almost any query) while carrying a recent timestamp for old content. Pass false to exclude them entirely.'),
   sessionId: z.string().optional().describe('search/latest/sessions: restrict to one conversation (the transcript session id stamped on ingested exchanges).'),
+  // QUERY EXPANSION (off | shadow | on; Daniel's ruling 2026-09-22). `queries` is a SEPARATE field on
+  // purpose: `query` stays the caller's own words, and the absence verdict is judged on those alone.
+  // The fuzz harness sends `query` as an array and expects a refusal — widening `query` would
+  // silently accept it.
+  queries: z.array(z.string().max(MAX_QUERY_CHARS)).max(4).optional().describe("search only: up to 4 ALTERNATIVE phrasings of the same question, ranked beside `query` in one call. `results` stay the question as asked (each row gains matchedVia naming the phrasings that also reached it); rows only a phrasing reached come back under viaVariants with queryScore, never among the answers; the absence verdict stays on `query`. Honoured when expansion is 'shadow' or 'on' (see `expand`); ignored by latest."),
+  expand: z.union([z.enum(['off', 'shadow', 'on']), z.boolean()]).optional().describe("search only: query expansion for THIS call — 'off' (default), 'shadow' (computed and logged, results unchanged), 'on' (requeryHint on an empty result; `queries` fused). Overrides MEMORY_QUERY_EXPANSION / local-config queryExpansion."),
   project: z.union([z.string(), z.array(z.string())]).optional().describe("search: restrict to memories from a project folder. 'this' means the server's canonical project. Memories with no project are always returned."),
   account: z.union([z.string(), z.array(z.string())]).optional().describe("search: restrict to memories written by an account. 'mine' means this surface's own MEMORY_ACCOUNT. Pass an array to read across several. Memories with no account label are ALWAYS returned, so nothing written before labelling existed disappears."),
   after: z.string().optional().describe('search: HARD lower bound on a memory\'s date (ISO). Excludes — use only when you mean exclusion.'),
@@ -1392,8 +1401,11 @@ export const ACTION_STRICTNESS = { write: WRITE_ACTIONS, read: READ_ACTIONS };
 // Identical to MEMORY_ARGS except for the action enum. Deriving rather than hand-listing means a
 // new action is a compile-time-ish decision: it must appear in WRITE_ACTIONS or READ_ACTIONS to be
 // reachable at all, and CANNOT be quietly reachable from both.
+// SEARCH-ONLY ARGUMENTS DO NOT RIDE ON THE WRITE TOOL. memory_write has no search action, so the
+// query-expansion args would be 823 dead bytes in its schema on every session (measured 2026-09-22).
+const SEARCH_ONLY_ARGS = new Set(['queries', 'expand']);
 const argsForActions = (actions, describe) => ({
-  ...MEMORY_ARGS,
+  ...Object.fromEntries(Object.entries(MEMORY_ARGS).filter(([k]) => actions.has('search') || !SEARCH_ONLY_ARGS.has(k))),
   action: z.enum(ALL_ACTIONS.filter((a) => actions.has(a))).describe(describe)
 });
 

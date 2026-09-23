@@ -12,8 +12,66 @@ be checkable.
 
 ## [Unreleased]
 
-One defect, one fix, and the class it belongs to. Retrieval is untouched; the ranking is the
-same. What changed is whether the index gets WRITTEN.
+One defect, one fix, and the class it belongs to — and one new, switchable retrieval feature that
+is OFF by default. With the switch off, retrieval is untouched: the ranking snapshot over 46
+queries is byte-identical before and after.
+
+### Added
+
+- **Query expansion — a three-position switch, `off` | `shadow` | `on`, default `off`.** Set with
+  `MEMORY_QUERY_EXPANSION`, or `queryExpansion` in `local-config.json`, or per call with the new
+  `expand` argument on `search` (a boolean is accepted: `true` = on, `false` = off). An unknown
+  value falls back to the configured mode, never to `on`. `latest` ignores it.
+
+  The design rule, and why it is not a synonym engine: **the server never invents words and never
+  re-queries by itself.** The caller (Claude) owns the guessing. What the server adds is the two
+  things a caller cannot do alone:
+
+  - **Several phrasings in one call — `queries: [...]`** (up to 4 alternative phrasings alongside
+    the same `query`). Each is ranked against the same index and filters and judged on its own words.
+    A phrasing that itself refuses contributes nothing. **`results` are the question as asked and do
+    not move**: same rows, same order, same scores as without phrasings — each row only gains
+    `matchedVia: ["query", "queries[0]", …]` naming the phrasing(s) that also reached it. Rows at or
+    above the corpus's score floor that only a phrasing reached come back under `viaVariants.results`,
+    sorted, each with `matchedVia`, `viaVariantOnly: true` and `queryScore` (what the original question
+    gave that document), and `alsoBestWeak: true` when it was already the nearest weak neighbour —
+    a phrasing built from a document's own words scores it high by construction, and the note says
+    that is not new evidence.
+  - **The absence verdict stays on `query`.** If the question as asked has no strong match, it stays
+    `noStrongMatch: true` with empty `results`, whatever the phrasings found. Expansion can label and
+    add beside the answers; it can never turn "I have no memory of that" into an answer, and it can
+    never push a real answer out of `results` — the first cut could (an unrelated phrasing at
+    `limit: 1` displaced the answer and `signals.topScore` described a different document than
+    `results[0]`); an adversarial pass caught it before it shipped. On a bm25-only (degraded) index
+    expansion does nothing and says why: that verdict cannot judge a phrasing.
+  - **`requeryHint` on an empty result** — 3 to 6 words from the bestWeak documents' names,
+    headings and descriptions that the query did not use and that exist in this index, weighted
+    toward names and headings and toward the nearest document, with words common to more than a
+    quarter of the corpus dropped. They are the corpus's own vocabulary for the topic nearby
+    ("sealant · tubeless · tyre" for a question about parking, in the bike-workshop fixture), offered
+    as leads so a second try can be phrased in the words this corpus actually uses. The guidance says
+    so, once, and invites `queries:[…]`.
+  - **`shadow`** computes all of the above, writes it to the existing redacted query log as an
+    `expansion` object on the row (phrasings redacted like `q`; per-phrasing verdicts; phrasing-only
+    rows; hint terms) and returns the unexpanded baseline plus a one-line `expansion` marker. On an
+    empty result it invites phrasings WITHOUT handing over the hint terms — so the paired comparison
+    (first pass = control, second pass with phrasings = treatment) has its data while nothing the
+    caller sees has changed. `on` returns the fields. `off` adds nothing, not even to the log.
+
+  Internally the ranking pass was extracted into one function (`rankOne`) so a phrasing costs one
+  embedding and one ranking, not a second envelope (freshness check, git currency, unindexed scan,
+  log row). Measured on the author's corpus: a phrasing adds ~10 ms on a 200-document index and
+  ~100 ms on a 4,000-document one; the hint itself costs nothing. The two arguments add 823 bytes to
+  the read tool's input schema and nothing to the write tool's (search-only arguments stay off it).
+  Hint terms exclude identifiers (commit hashes, version tags, file names, path tokens) and words that
+  appear in more than max(2, 10 %) of the index's document names — "log", "service", "rule" are shelf
+  labels, not topics. **Measured** (2026-09-22, two independent test passes): every guarantee held —
+  off byte-identical over 46 snapshot queries; 33/33 answered live queries unchanged under `on` and
+  under a nonsense phrasing; 0 refusals overturned; credentials in a phrasing never reach the log. On
+  the author's own corpus the hint was topical in 6 of 8 real refusals but pointed at the intended
+  document in 0 of 8 — on a true absence the nearest documents are the wrong ones by definition. On
+  the bike-workshop fixture it named the right document's word in 5 of 6 paraphrases. That is why it
+  ships `off`, with `shadow` for the comparison, and not `on`.
 
 ### Fixed
 

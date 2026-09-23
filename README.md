@@ -525,6 +525,34 @@ Measured on the reporting caller's own query against the same corpora, read-only
 after: **56,634 → 26,842 bytes**, and **17,123 with `brief: true`**. The ten ranked rows are 12,426
 bytes of that, in both runs — they are the answer, and they are what is left.
 
+### Query expansion — `queries?`, `expand?` (off by default)
+
+A three-position switch: `off` | `shadow` | `on`. Set it with `MEMORY_QUERY_EXPANSION`, with
+`queryExpansion` in `local-config.json`, or per call with `expand` (`true`/`false` also work). An
+unknown value falls back to the configured mode, never to `on`. `latest` ignores both arguments.
+
+The server never invents synonyms and never re-queries on its own — the caller owns the guessing.
+What `on` adds is the two things a caller cannot do alone:
+
+- **`queries: [...]`** — up to 4 alternative phrasings of the same question, ranked in one call
+  beside `query`. Each is judged on its own words; a phrasing that refuses adds nothing. `results`
+  stay the question as asked — same rows, order and scores — each gaining `matchedVia`, the
+  phrasing(s) that also reached it. Rows only a phrasing reached come back under
+  `viaVariants.results` with `queryScore` (what the original question gave them) and
+  `alsoBestWeak` when the row was already the nearest weak neighbour.
+- **The verdict stays on `query`.** If the question as asked has no strong match, `noStrongMatch`
+  stays true and `results` stays empty, whatever the phrasings found. Read a `viaVariants` row
+  before relying on it, and say it came from a rephrasing. On a bm25-only index expansion does
+  nothing and says why.
+- **`requeryHint`** on an empty result — 3 to 6 words the nearest documents (`bestWeak`) use and the
+  query did not, taken from their names, headings and descriptions and present in this index. The
+  corpus's own vocabulary for the topic nearby, offered as leads for one more try.
+
+`shadow` computes all of this, records it on the query-log row (`expansion`, redacted like `q`),
+and returns the unexpanded baseline plus an `expansion: {mode: "shadow"}` marker; on an empty
+result it invites `queries:[…]` without handing over the hint terms, so a before/after comparison
+can be read from the log. `off` adds nothing to the response or the log.
+
 ### `memory({action: "latest", query, limit?, scope?, sessionId?, account?, project?})`
 
 **For state questions — "did X finish", "what happened after Y", "where did we leave X".**
@@ -1701,6 +1729,7 @@ Nothing here is a hard limit; they are the numbers, so you can decide.
 | `MEMORY_FIRST_BUILD_MAX` | `40` files — a corpus with no index at all is built inline up to this size, and reported stale over it |
 | `MEMORY_MODEL_CACHE` | `./.model-cache` |
 | `MEMORY_INLINE_REINDEX` | `1` — `0` keeps the staleness check and the stamp, drops the inline rebuild |
+| `MEMORY_QUERY_EXPANSION` | `off` — `shadow` computes the requery hint and fused phrasings, logs them, returns the baseline; `on` returns them. Also `queryExpansion` in `local-config.json`; the per-call `expand` argument wins. An unknown value is `off` |
 | `MEMORY_AUTO_INGEST` | *(unset)* — `0` never captures a session, `always`/`1` always does. Unset means "capture the sessions the connector was on for". **A hook inherits no environment**, so for a permanent setting use `local-config.json` (`autoIngest` / `captureAlways`); this var is for a one-off manual run |
 | `MEMORY_INGEST_SINCE_MINUTES` | *(unset)* — limit a capture to the last N minutes. Set for you by `memory_write({action: "capture", sinceMinutes})`. The window is measured against each exchange's **last activity**, not the moment its question was asked, so a turn that has been running longer than the window is still inside it |
 | `MEMORY_INFLIGHT_QUIET_MIN` | `10` — minutes of transcript silence after which a **timed** walk captures the in-flight exchange instead of deferring it (`0` never defers, `off` always does). Only reached when the last assistant record does not carry `stop_reason: end_turn`/`stop_sequence`; a turn that says it stopped is captured on the next tick regardless. The hook never defers, whatever this says |
