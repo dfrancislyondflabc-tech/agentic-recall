@@ -31,6 +31,12 @@ the server does **not** go looking through your disk for your notes.
 > cleared by `npm cache verify`, by disk cleanup, and by every new machine.
 >
 > `@2` takes fixes and features, never a breaking major. `agentic-recall@2.0.0` pins exactly.
+>
+> **🟥 A warm npx cache does NOT pick up a fix on its own.** Measured 2026-09-22: 2.0.3 had been on the
+> registry for over an hour, and three servers spawned with `npx -y agentic-recall@2` still ran the cached
+> 2.0.1. To take a fix, clear the cached copy and re-resolve once — macOS/Linux:
+> `rm -rf ~/.npm/_npx && npx -y agentic-recall@2 --version`; Windows: the `Remove-Item` line below —
+> then restart your client. `serverVersion` in every response tells you which version actually answered.
 
 > **🟥 Windows users: use this config instead.** Bare `npx` does not work for a Node MCP client
 > on Windows. This is measured, not inferred — CI spawns the published package on `windows-latest`
