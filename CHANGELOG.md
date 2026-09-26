@@ -10,6 +10,20 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [Unreleased]
+
+### Fixed
+- **An idle connector gives its memory back (MEM-98, step 3b).** A loaded index is the whole corpus as a JS object tree,
+  and a connector that searched once kept it for the rest of its life: measured 2026-09-26 on a 16 GB Mac beside a local
+  model, three connector copies held 2.6–2.9 GB, the Mac swapped, and the SSD took ~140 GB/hour of writes (3 GB/hour once
+  they were stopped). Now a scope unused for `MEMORY_INDEX_IDLE_MIN` minutes (default **10**; `0` = never) is dropped from
+  the cache by an unref()'d sweep, and the next search re-reads the same file. Measured on the author's real corpus
+  (493 curated + 4,768 staging docs): process footprint **1,237 MB loaded → 172 MB** 20 s after the unload; the reload
+  costs ~6 s for both scopes; 16 real queries (both scopes) return **byte-identical** rankings before and after — names,
+  order and scores to 6 decimals — with the clock frozen. (Unfrozen, a document minutes old can move in the 6th decimal
+  between two searches seconds apart: `recencyFactor` reads `Date.now()`. That is not the unload; a control pass with no
+  unload shows the same.) New public tests (5) fail on the old code. `npm test`: 44 stdio + 400 public, exit 0.
+
 ## [2.1.0] — 2026-09-23
 
 ### Changed

@@ -2169,6 +2169,41 @@ group("(a98) the scope:'all' envelope — an empty corpus, one copy of the rows,
   cleanupSandbox(sb.dir);
 }
 
+group('MEM-98 3b — an idle index is unloaded, and the next search returns the same ranking');
+{
+  const sb = sandbox({ MEMORY_INDEX_IDLE_MIN: '10' });
+  const w = (n, d, b) => { mkdirSync(join(sb.dir, 'mem'), { recursive: true });
+    writeFileSync(join(sb.dir, 'mem', n + '.md'), `---\nname: ${n}\ndescription: ${d}\n---\n\n${b}\n`); };
+  w('kiln', 'the kiln firing schedule', 'The kiln fires at 1200 degrees and is held at each plateau.');
+  w('spokes', 'wheel spoke tension', 'Spoke tension is checked with a gauge after every ride.');
+  w('glaze', 'glaze notes', 'The glaze settles before the next ramp begins in the kiln.');
+  const r = run(sb.env, `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const S = await import(SRCH); S.invalidate();
+    // results, or — when a 3-doc fixture falls under the absence floor — the refused candidates; either is a ranking
+    const rank = async () => { const x = await S.search('the kiln fires at 1200 degrees', { limit: 5 });
+      return [...(x.results || []), ...(x.bestWeak || [])].map((y) => y.name + '|' + Number(y.score).toFixed(6)); };
+    const before = await rank();
+    const loaded1 = S.loadedScopes();
+    const early = S.sweepIdleIndexes(Date.now() + 9 * 60_000);          // 9 min: still inside the window
+    const loaded2 = S.loadedScopes();
+    const late = S.sweepIdleIndexes(Date.now() + 11 * 60_000);          // 11 min: unloaded
+    const loaded3 = S.loadedScopes();
+    const after = await rank();                                          // re-reads the same file
+    const loaded4 = S.loadedScopes();
+    process.env.MEMORY_INDEX_IDLE_MIN = '0';
+    const never = S.sweepIdleIndexes(Date.now() + 24 * 3600_000);        // 0 = never unload
+    out({ before, after, loaded1, early, loaded2, late, loaded3, loaded4, never, still: S.loadedScopes() });`);
+  check('MEM-98 3b: a search loads the curated index', Array.isArray(r.loaded1) && r.loaded1.includes('curated'), JSON.stringify(r.loaded1));
+  check('MEM-98 3b [control]: at 9 minutes idle nothing is unloaded', Array.isArray(r.early) && r.early.length === 0 && r.loaded2.includes('curated'), JSON.stringify(r.early));
+  check('MEM-98 3b: at 11 minutes idle the index is dropped from memory', Array.isArray(r.late) && r.late.includes('curated') && !r.loaded3.includes('curated'), JSON.stringify({ late: r.late, loaded: r.loaded3 }));
+  check('MEM-98 3b: the next search re-reads it and ranks IDENTICALLY (names, order, scores to 6 decimals)',
+    Array.isArray(r.before) && r.before.length > 0 && JSON.stringify(r.before) === JSON.stringify(r.after) && r.loaded4.includes('curated'),
+    JSON.stringify({ before: r.before, after: r.after }));
+  check('MEM-98 3b: MEMORY_INDEX_IDLE_MIN=0 never unloads', Array.isArray(r.never) && r.never.length === 0 && r.still.includes('curated'), JSON.stringify(r.never));
+  cleanupSandbox(sb.dir);
+}
+
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);
 if (fail) { console.log('\nFailures:'); for (const f of failures) console.log(`  - ${f}`); }
 process.exit(fail ? 1 : 0);
