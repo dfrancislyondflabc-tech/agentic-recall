@@ -2204,6 +2204,44 @@ group('MEM-98 3b — an idle index is unloaded, and the next search returns the 
   cleanupSandbox(sb.dir);
 }
 
+group('MEM-98 3c — the recall honesty probe (a MONITOR) never loads an index and never keeps one alive');
+{
+  // 2026-09-26 19:39: three 2.1.1 copies nobody had searched held ~600 MB each and the Mac swapped 165-278 GB/hour —
+  // the 5-min probe loaded the staging index on its first tick and reset the idle clock every tick (5 < 10 min).
+  const sb = sandbox({ MEMORY_INDEX_IDLE_MIN: '10' });
+  mkdirSync(join(sb.dir, 'mem'), { recursive: true });
+  writeFileSync(join(sb.dir, 'mem', 'kiln.md'), '---\nname: kiln\ndescription: the kiln firing schedule\n---\n\nThe kiln fires at 1200 degrees.\n');
+  const HB = JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'heartbeat.js')).href);
+  const CF = JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'config.js')).href);
+  const r = run(sb.env, `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const S = await import(SRCH); S.invalidate();
+    const C = await import(${CF}); const H = await import(${HB});
+    const m0 = S.getIndex({ scope: 'curated', monitor: true });
+    const afterMonitor = S.loadedScopes();
+    await C.withQuerySource('canary', () => S.latest('kiln', { scope: 'curated', limit: 3 }));
+    const afterCanary = S.loadedScopes();
+    await H.recallProbeOnce().catch(() => null);
+    const afterProbe = S.loadedScopes();
+    await S.search('kiln fires', { limit: 3 });                 // a real use loads and starts the clock
+    const LU = (sc) => (typeof S.lastUsedAt === 'function' ? S.lastUsedAt(sc) : null);   // absent before 2.1.2
+    const t1 = LU('curated'), loadedReal = S.loadedScopes();
+    await new Promise((res) => setTimeout(res, 25));
+    S.getIndex({ scope: 'curated', monitor: true });
+    await C.withQuerySource('canary', () => S.latest('kiln', { scope: 'curated', limit: 3 }));
+    const t2 = LU('curated');
+    await new Promise((res) => setTimeout(res, 25));
+    await S.search('kiln fires', { limit: 3 });
+    const t3 = LU('curated');
+    out({ m0present: m0.present, afterMonitor, afterCanary, afterProbe, t1, t2, t3, loadedReal });`);
+  check('MEM-98 3c: a monitor getIndex on nothing resident loads nothing', Array.isArray(r.afterMonitor) && r.afterMonitor.length === 0 && r.m0present === false, JSON.stringify(r));
+  check('MEM-98 3c: a canary-tagged query loads nothing', Array.isArray(r.afterCanary) && r.afterCanary.length === 0, JSON.stringify(r.afterCanary));
+  check('MEM-98 3c: the real honesty probe (recallProbeOnce) loads nothing — was: the staging index at the first tick', Array.isArray(r.afterProbe) && !r.afterProbe.includes('staging') && r.afterProbe.length === 0, JSON.stringify(r.afterProbe));
+  check('MEM-98 3c: monitor + canary calls on a RESIDENT index do not reset its idle clock', typeof r.t1 === 'number' && r.t2 === r.t1, JSON.stringify({ t1: r.t1, t2: r.t2 }));
+  check('MEM-98 3c [control]: a real search loads the index and does reset the clock', Array.isArray(r.loadedReal) && r.loadedReal.includes('curated') && r.t3 > r.t1, JSON.stringify({ t1: r.t1, t3: r.t3 }));
+  cleanupSandbox(sb.dir);
+}
+
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);
 if (fail) { console.log('\nFailures:'); for (const f of failures) console.log(`  - ${f}`); }
 process.exit(fail ? 1 : 0);

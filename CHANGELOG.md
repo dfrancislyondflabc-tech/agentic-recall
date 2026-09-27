@@ -12,6 +12,20 @@ be checkable.
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-09-26
+
+### Fixed
+- **The recall honesty probe no longer loads an index, or keeps one alive (MEM-98, step 3c).** 2.1.1's idle unload never fired
+  in practice: the 5-minute honesty probe (`lib/heartbeat.js`) called `getIndex({scope:'staging'})` and a `latest()` query, so
+  its first tick LOADED the ~600 MB staging index in every connector copy — with nobody searching — and every later tick reset
+  the idle clock (5 min < the 10-min unload). Measured on the author's Mac the evening 2.1.1 shipped: three 2.1.1 copies that no
+  one had used held ~600 MB each and macOS swapped **165–278 GB/hour**; stopping them → 0. Now a *monitor* call
+  (`getIndex({monitor:true})`, or any query tagged `src:'canary'`) only looks at an index that is already resident: it never
+  loads one and never refreshes the idle clock. The probe's question ("is the resident copy stale?") has no subject when nothing
+  is resident, so nothing is lost. New `lastUsedAt(scope)` for tests and diagnostics. New public tests (5): on 2.1.1 the real
+  probe leaves `["curated","staging"]` loaded; now nothing. `npm test`: 44 stdio + 405 public, exit 0.
+
+
 ## [2.1.1] — 2026-09-26
 
 ### Fixed
@@ -1817,6 +1831,7 @@ Notable behaviour, since there is no earlier entry to diff against:
 - **Windows correctness**: UTF-8 BOMs and CRLF line endings in frontmatter and bodies are handled.
 - **Every query is logged locally** for measurement (`MEMORY_QUERY_LOG`, `0` disables).
 
+[2.1.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.1.2
 [2.1.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.1.1
 [2.1.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.1.0
 [2.0.3]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.0.3
