@@ -12,6 +12,8 @@ be checkable.
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-09-26
+
 ### Fixed
 - **An idle connector gives its memory back (MEM-98, step 3b).** A loaded index is the whole corpus as a JS object tree,
   and a connector that searched once kept it for the rest of its life: measured 2026-09-26 on a 16 GB Mac beside a local
@@ -1815,6 +1817,10 @@ Notable behaviour, since there is no earlier entry to diff against:
 - **Windows correctness**: UTF-8 BOMs and CRLF line endings in frontmatter and bodies are handled.
 - **Every query is logged locally** for measurement (`MEMORY_QUERY_LOG`, `0` disables).
 
+[2.1.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.1.1
+[2.1.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.1.0
+[2.0.3]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.0.3
+[2.0.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.0.2
 [2.0.1]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.0.1
 [2.0.0]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v2.0.0
 [1.8.2]: https://github.com/dfrancislyondflabc-tech/agentic-recall/releases/tag/v1.8.2
