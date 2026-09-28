@@ -719,7 +719,7 @@ for (let idx = 0; idx < exchanges.length; idx++) {
   // rewrite is not a capture; rebuilding the frontmatter from this fixed list alone would have
   // silently undone all of those the next time the extractor ran -- re-indexing a memory that had
   // been deliberately excluded. Keys this extractor owns are always regenerated; the rest ride along.
-  const mdFor = (account, extraMeta = []) => {
+  const mdFor = (account, extraMeta = [], carried = null) => {
     const fm = [
       '---',
       `name: ${name}`,
@@ -741,7 +741,7 @@ for (let idx = 0; idx < exchanges.length; idx++) {
       // reading a draft.
       ex === inFlightExchange ? '  inFlight: true' : null,
       (() => {
-        const c = commitBuckets.get(exchanges.indexOf(ex)) || [];
+        const c = carried || commitBuckets.get(exchanges.indexOf(ex)) || [];
         return c.length ? `  commits: ${c.slice(0, MAX_COMMITS_PER_EXCHANGE).map((x) => x.sha).join(' ')}` : null;
       })(),
       ...extraMeta,
@@ -764,7 +764,7 @@ for (let idx = 0; idx < exchanges.length; idx++) {
     //     could not tell where the user's words stopped, and a typed "# heading" became a real
     //     heading in `get outline`. Every continuation line now carries the quote prefix.
     const added = inter.map((t) => '\n> **Added mid-reply:** ' + t.split('\n').map((l) => l.trimEnd()).join('\n> ')).join('');
-    const cmts = (commitBuckets.get(exchanges.indexOf(ex)) || []).slice(0, MAX_COMMITS_PER_EXCHANGE);
+    const cmts = (carried || commitBuckets.get(exchanges.indexOf(ex)) || []).slice(0, MAX_COMMITS_PER_EXCHANGE);
     const commitBlock = cmts.length
       ? '\n**Commits during this exchange:**\n'
         + cmts.map((c) => `- \`${c.sha}\` (${c.repo}) ${scrubAddresses(redact(c.subject || '').text)}`).join('\n')
@@ -825,6 +825,23 @@ const extraMetaOf = (raw) => {
   }
   return out;
 };
+// A RUN THAT CANNOT SEE THE REPOS KEEPS THE COMMITS A RUN THAT COULD SAW (MEM-99, 2026-09-28). The connector is started with
+// MEMORY_GIT_REPOS; the 5-minute LaunchAgent and the Stop hook were not. Each removed what the other had written — the same 7
+// finished exchanges were rewritten on EVERY tick (the 112 MB transcript re-read, 7 re-embeds, and the rewrites behind the MEM-100
+// "vanished" alarm). With no repos configured, the commit list already in the file is read back and rendered through the SAME code
+// a configured run uses, so the bytes are identical and the file is left alone. With repos configured, the fresh join wins.
+const CARRY_COMMITS = !configuredRepos().length;
+const commitsOf = (raw) => {
+  const i = raw.indexOf('\n**Commits during this exchange:**\n');
+  if (i === -1) return [];
+  const out = [];
+  for (const l of raw.slice(i + 1).split('\n').slice(1)) {
+    const m = /^- `([0-9a-f]{7,40})` \(([^)]*)\) ?(.*)$/.exec(l);
+    if (!m) break;
+    out.push({ sha: m[1], repo: m[2], subject: m[3] });
+  }
+  return out;
+};
 const sessionOf = (raw) => (/^  sessionId: (\S+)$/m.exec(raw.slice(0, raw.indexOf('\n---', 4) + 1 || 4000)) || [])[1] || null;
 let wrote = 0, unchanged = 0, skippedNew = 0, foreign = 0;
 for (const o of out) {
@@ -837,7 +854,8 @@ for (const o of out) {
     const owner = sessionOf(existing);
     if (owner && owner !== sessionId) { foreign++; console.error(`REFUSED ${o.file}: held by session ${owner}, not ${sessionId} (prefix collision)`); continue; }
   }
-  const md = existing === null ? o.md : o.mdFor(stampOf(existing), extraMetaOf(existing));
+  const carried = CARRY_COMMITS && existing !== null ? commitsOf(existing) : [];
+  const md = existing === null ? o.md : o.mdFor(stampOf(existing), extraMetaOf(existing), carried.length ? carried : null);
   if (existing === md) { unchanged++; continue; }
   // 🟥 ATOMIC, LIKE EVERY OTHER WRITER IN THIS PROJECT (MEM-34, 2026-09-05). This was a bare
   // writeFileSync to the final path. The recall stress harness killed this process part-way through
