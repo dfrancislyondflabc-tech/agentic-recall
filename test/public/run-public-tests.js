@@ -1584,6 +1584,10 @@ group('the store is truth — a file the index has not read yet is served, and t
 {
   const { storeAuditTick } = await import('./store-audit-tick.mjs');
   await storeAuditTick({ check, group });
+  const { commitsSurviveRewrite } = await import('./commits-survive-rewrite.mjs');
+  await commitsSurviveRewrite({ check, group });
+  const { vanishBackIsNotNews } = await import('./vanish-back-is-not-news.mjs');
+  await vanishBackIsNotNews({ check, group });
 }
 
 // =============================================================================================
