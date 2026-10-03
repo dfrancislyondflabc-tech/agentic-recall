@@ -2242,6 +2242,38 @@ group('MEM-98 3c — the recall honesty probe (a MONITOR) never loads an index a
   cleanupSandbox(sb.dir);
 }
 
+group('MEM-103 — only a CLIENT request keeps an index alive; a background caller never resets its idle clock');
+{
+  // 2026-10-02: Claude Desktop's connector loaded staging for a client at 18:29Z and still held it (1.2 GB) seven hours later,
+  // while curated/projects/handoff from the SAME request unloaded at 18:40Z; no client call (ok or failed) was logged after
+  // 18:29:49Z. On 2.1.2 any non-request getIndex re-stamped the clock, so a background caller every <10 min pinned it forever.
+  const sb = sandbox({ MEMORY_INDEX_IDLE_MIN: '10', MEMORY_QUERY_SOURCE: '', MEMORY_RECALL_CANARY: '0' });
+  mkdirSync(join(sb.dir, 'mem'), { recursive: true });
+  writeFileSync(join(sb.dir, 'mem', 'kiln.md'), '---\nname: kiln\ndescription: the kiln firing schedule\n---\n\nThe kiln fires at 1200 degrees.\n');
+  const CF = JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'config.js')).href);
+  const r = run(sb.env, `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const S = await import(SRCH); const C = await import(${CF}); S.invalidate();
+    const nap = (ms) => new Promise((res) => setTimeout(res, ms));
+    const client = async () => { C.beginMcpRequest({}); try { await S.search('kiln fires', { limit: 3 }); } finally { C.endMcpRequest(); } };
+    const src0 = C.querySource();
+    await client(); const t1 = S.lastUsedAt('curated');
+    await nap(60); S.getIndex({ scope: 'curated' }); const t2 = S.lastUsedAt('curated');                 // background hit
+    await nap(60); S.getIndex({ scope: 'curated', reload: true }); const t3 = S.lastUsedAt('curated');   // background reload
+    const swept = S.sweepIdleIndexes(t1 + 600_000 + 30);                                                  // 10 min + 30 ms after the CLIENT
+    S.getIndex({ scope: 'curated' }); const t4 = S.lastUsedAt('curated');                                 // background LOAD of a dropped scope
+    const swept2 = S.sweepIdleIndexes(t4 + 600_000 + 30);
+    await client(); const t5 = S.lastUsedAt('curated'); await nap(60); await client(); const t6 = S.lastUsedAt('curated');
+    out({ src0, t1, t2, t3, swept, t4, swept2, t5, t6 });`);
+  check('MEM-103 [setup]: outside a request the source is "unknown" (or this group tests nothing)', r.src0 === 'unknown', JSON.stringify(r.src0));
+  check('MEM-103: a background hit on a resident index does not reset its idle clock (2.1.2 did)', typeof r.t1 === 'number' && r.t2 === r.t1, JSON.stringify({ t1: r.t1, t2: r.t2 }));
+  check('MEM-103: a background RELOAD keeps the client\'s stamp (2.1.2 re-stamped)', r.t3 === r.t1, JSON.stringify({ t1: r.t1, t3: r.t3 }));
+  check('MEM-103: the index is dropped 10 min after the CLIENT\'s last use, whatever the background did (2.1.2 kept it)', Array.isArray(r.swept) && r.swept.includes('curated'), JSON.stringify(r.swept));
+  check('MEM-103: a background LOAD is stamped once, so the sweep can still drop it', typeof r.t4 === 'number' && Array.isArray(r.swept2) && r.swept2.includes('curated'), JSON.stringify({ t4: r.t4, swept2: r.swept2 }));
+  check('MEM-103 [control]: a client request still refreshes the clock', typeof r.t5 === 'number' && r.t6 > r.t5, JSON.stringify({ t5: r.t5, t6: r.t6 }));
+  cleanupSandbox(sb.dir);
+}
+
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);
 if (fail) { console.log('\nFailures:'); for (const f of failures) console.log(`  - ${f}`); }
 process.exit(fail ? 1 : 0);
