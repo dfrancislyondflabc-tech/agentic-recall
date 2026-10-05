@@ -12,6 +12,29 @@ be checkable.
 
 ## [Unreleased]
 
+## [2.1.3] — 2026-10-05
+
+### Fixed
+- **Only a client request keeps an index alive; a background caller never resets its idle clock (MEM-103).** 2.1.2 stopped
+  the honesty probe from refreshing the 10-minute idle clock, but any OTHER non-request caller still did — so something
+  touching an index more often than every 10 minutes pinned it in memory for the life of the process. Seen on the author's
+  Mac on 2026-10-02: Claude Desktop's connector loaded the staging index for one search at 18:29Z and still held it seven
+  hours later (**1,211 MB**), while curated/projects/handoff loaded by the same request unloaded on time at 18:40Z, and no
+  client call, ok or failed, arrived in between. The other five connector copies sat at 34–171 MB. The rule is now
+  structural: a request (source `live`) or an explicitly tagged source (`test`, a bench) refreshes the clock; a background
+  caller (`unknown`) may read, load or reload an index but never extends its life, and a background LOAD is stamped once so
+  the sweep can still drop it. The honesty probe was ruled out by reproduction; the exact background caller in that process
+  was not identified, so the first background hit per scope per hour is now **logged with its caller**, and the
+  `index loaded` / `index unloaded` lines carry the **pid** — two Desktop copies write one log file, and without it a load and
+  an unload could not be attributed to a process. New public tests (6): on 2.1.2 three fail (a background hit re-stamps, a
+  background reload re-stamps, the index is still loaded 10 min after the client's last use).
+- **A capture that cannot see the repos no longer rewrites what a capture that could wrote (MEM-99), and a memory that comes
+  back on disk is not reported as vanished (MEM-100).** The connector captured with `MEMORY_GIT_REPOS`, the LaunchAgent and the
+  Stop hook without, so the same finished exchanges were rewritten on every tick — one adding "Commits during this exchange",
+  the next removing it. And two rewritten exchanges that were back on disk kept `captureHealth` "degraded" for seven days.
+  New public tests: `commits-survive-rewrite` (3 of 6 fail on the old extractor) and `vanish-back-is-not-news` (3 of 4 fail on
+  the old code).
+
 ## [2.1.2] — 2026-09-26
 
 ### Fixed
