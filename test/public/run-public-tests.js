@@ -2246,6 +2246,32 @@ group('MEM-98 3c — the recall honesty probe (a MONITOR) never loads an index a
   cleanupSandbox(sb.dir);
 }
 
+group('MEM-104 — after an idle unload the server collects, so the memory actually goes back to the OS');
+{
+  // 2026-10-05, the PUBLISHED 2.1.3 on Daniel's real corpus: a real server unloaded every index on time and still sat at
+  // 739 MB 4.5 min later; in one process, 1,156 MB 20 s after the unload. An idle process never runs a major GC. Two GCs
+  // right after the unload -> 234 MB. This group proves the collection RUNS (the MB are measured in the eval, not here).
+  const mk = (extra) => { const sb = sandbox({ MEMORY_INDEX_IDLE_MIN: '10', ...extra });
+    mkdirSync(join(sb.dir, 'mem'), { recursive: true });
+    writeFileSync(join(sb.dir, 'mem', 'kiln.md'), '---\nname: kiln\ndescription: the kiln firing schedule\n---\n\nThe kiln fires at 1200 degrees.\n');
+    return sb; };
+  const body = `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const S = await import(SRCH); S.invalidate();
+    const has = typeof S.idleGcState === 'function';
+    await S.search('kiln fires', { limit: 3 });
+    const swept = S.sweepIdleIndexes(Date.now() + 11 * 60_000);
+    await new Promise((res) => setTimeout(res, 1600));
+    const st = has ? S.idleGcState() : null;
+    out({ has, swept, st });`;
+  const sbOn = mk({}); const on = run(sbOn.env, body); cleanupSandbox(sbOn.dir);
+  const sbOff = mk({ MEMORY_IDLE_GC: '0' }); const off = run(sbOff.env, body); cleanupSandbox(sbOff.dir);
+  check('MEM-104 [setup]: the sweep really unloaded the index (or this group tests nothing)', Array.isArray(on.swept) && on.swept.includes('curated'), JSON.stringify(on.swept));
+  check('MEM-104: after the unload a collection RAN (2.1.3 never collected)', on.has === true && on.st && on.st.ran === true, JSON.stringify(on.st));
+  check('MEM-104: ...and the heap did not grow across it', on.st && on.st.heapAfterMB <= on.st.heapBeforeMB, JSON.stringify(on.st));
+  check('MEM-104 [control]: MEMORY_IDLE_GC=0 turns it off', off.has === true && off.st === null && Array.isArray(off.swept) && off.swept.includes('curated'), JSON.stringify(off));
+}
+
 group('MEM-103 — only a CLIENT request keeps an index alive; a background caller never resets its idle clock');
 {
   // 2026-10-02: Claude Desktop's connector loaded staging for a client at 18:29Z and still held it (1.2 GB) seven hours later,
