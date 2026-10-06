@@ -12,6 +12,7 @@
 // It asserts CONTRACTS, not corpus statistics. Nothing here depends on how many documents exist, on
 // wall-clock time, or on any file outside test/fixtures/ and a temp directory it creates itself.
 
+import { delimiter as pathDelimiter } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, existsSync, readdirSync,
          symlinkSync, statSync, appendFileSync } from 'node:fs';
@@ -2243,6 +2244,38 @@ group('MEM-98 3c — the recall honesty probe (a MONITOR) never loads an index a
   check('MEM-98 3c: the real honesty probe (recallProbeOnce) loads nothing — was: the staging index at the first tick', Array.isArray(r.afterProbe) && !r.afterProbe.includes('staging') && r.afterProbe.length === 0, JSON.stringify(r.afterProbe));
   check('MEM-98 3c: monitor + canary calls on a RESIDENT index do not reset its idle clock', typeof r.t1 === 'number' && r.t2 === r.t1, JSON.stringify({ t1: r.t1, t2: r.t2 }));
   check('MEM-98 3c [control]: a real search loads the index and does reset the clock', Array.isArray(r.loadedReal) && r.loadedReal.includes('curated') && r.t3 > r.t1, JSON.stringify({ t1: r.t1, t3: r.t3 }));
+  cleanupSandbox(sb.dir);
+}
+
+group('MEM-105 — commits are written in ONE order, whatever the git race or the order the repos are listed in');
+{
+  // 2026-10-05: a finished exchange flipped between two versions for hours — the SAME commits, 124bbdf (server) and 4e2dfb2
+  // (memory-mcp-server), swapped. Both are stamped 2026-08-28T22:41:17-07:00; the repos are read in parallel and the old
+  // sort was a stable STRING sort, so a same-second tie kept the git-process race's order. A string sort is also wrong across
+  // offsets: 22:41:00-08:00 is LATER than 22:41:17-07:00.
+  const sb = sandbox({});
+  const mkRepo = (name, commits) => { const d = join(sb.dir, name); mkdirSync(d, { recursive: true });
+    const g = (args, env = {}) => spawnSync('git', args, { cwd: d, encoding: 'utf8', env: { ...process.env, HOME: sb.dir, GIT_CONFIG_NOSYSTEM: '1', ...env } });
+    g(['init', '-q']); g(['config', 'user.email', 't@example.com']); g(['config', 'user.name', 't']);
+    for (const [msg, when] of commits) { writeFileSync(join(d, msg + '.txt'), msg); g(['add', '.']);
+      g(['commit', '-q', '-m', msg], { GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when }); }
+    return d; };
+  const A = mkRepo('alpha-repo', [['tie-in-alpha', '2026-08-28T22:41:17-07:00']]);
+  const B = mkRepo('beta-repo', [['tie-in-beta', '2026-08-28T22:41:17-07:00'], ['later-by-offset', '2026-08-28T22:41:00-08:00']]);
+  const GJ = JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'git-join.js')).href);
+  const body = `const G = await import(${GJ});
+    const r = await G.commitsInRange('2026-08-28T00:00:00Z', '2026-08-30T00:00:00Z', { max: 50 });
+    out({ seq: r.map((c) => c.repo + ':' + c.subject), hasCmp: typeof G.compareCommits === 'function' });`;
+  const ab = run({ ...sb.env, MEMORY_GIT_REPOS: [A, B].join(pathDelimiter) }, body);
+  const ba = run({ ...sb.env, MEMORY_GIT_REPOS: [B, A].join(pathDelimiter) }, body);
+  check('MEM-105 [setup]: all 3 fixture commits are read, whichever repo is listed first (or this group tests nothing)',
+    Array.isArray(ab.seq) && ab.seq.length === 3 && Array.isArray(ba.seq) && ba.seq.length === 3, JSON.stringify({ ab, ba }));
+  check('MEM-105: the same order whichever repo is listed first', JSON.stringify(ab.seq) === JSON.stringify(ba.seq), JSON.stringify({ ab: ab.seq, ba: ba.seq }));
+  check('MEM-105: a same-second tie is broken by repo, never by which git finished first',
+    Array.isArray(ab.seq) && ab.seq[0] === 'alpha-repo:tie-in-alpha' && ab.seq[1] === 'beta-repo:tie-in-beta', JSON.stringify(ab.seq));
+  check('MEM-105: chronological across offsets (22:41:00-08:00 comes AFTER 22:41:17-07:00; a string sort put it first)',
+    Array.isArray(ab.seq) && ab.seq[2] === 'beta-repo:later-by-offset', JSON.stringify(ab.seq));
+  check('MEM-105: one comparator, exported, for every capture path', ab.hasCmp === true, String(ab.hasCmp));
   cleanupSandbox(sb.dir);
 }
 
