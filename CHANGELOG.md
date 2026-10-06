@@ -12,6 +12,27 @@ be checkable.
 
 ## [Unreleased]
 
+## [2.1.4] — 2026-10-06
+
+### Fixed
+- **An idle unload now actually gives the memory back (MEM-104).** 2.1.1–2.1.3 dropped idle indexes on time, but an idle
+  server never runs a major garbage collection, so the process kept every page. Measured with the published 2.1.3 on the
+  author's real corpus: one process 1,156 MB loaded → still **1,156 MB** 20 s after the unload; a real server, with its
+  background jobs, still 739 MB 4.5 min after it — the same in 2.1.2 (and on Windows, working set 762 → 748 MB). The data
+  was garbage, not held: a forced collection took the heap from 515 to 23 MB. Now, one second after an unload, the server
+  runs two collections with a collector obtained at runtime (it is started without `--expose-gc`) and logs
+  `memory given back … heap X -> Y MB [pid]`; `MEMORY_IDLE_GC=0` turns it off; it never throws. Measured: one process
+  1,156 → **234 MB** 10 s after; a real server ~1,000 → **~670 MB** (2.1.3: unchanged). **Stated limit:** the remaining
+  ~670 MB in a real server is native memory (the JS heap is 33 MB after the collection) — ~221 MB of it is the embedding
+  model, which idle unload does not touch; the rest is not yet attributed. New public tests (4): on 2.1.3 no collection runs.
+- **Commits are written in one order, whatever the git race or the order the repos are listed in (MEM-105).** A finished
+  exchange was rewritten back and forth for hours: the same two commits — one per repo, stamped in the same second — swapped
+  places, because the repos are read in parallel and the old stable sort kept whichever git process finished first. That
+  sort was also a string sort, wrong across UTC offsets (`22:41:00-08:00` is later than `22:41:17-07:00` but sorted first).
+  Now one comparator: the instant, then the repo, then the SHA. New public tests (5), with two real git repos; on 2.1.3 the
+  offset check fails (the same-second race does not reproduce reliably on small repos). An exchange whose commits were in a
+  different order is rewritten once, then never again.
+
 ## [2.1.3] — 2026-10-05
 
 ### Fixed
