@@ -2256,7 +2256,7 @@ group('MEM-105 — commits are written in ONE order, whatever the git race or th
   const sb = sandbox({});
   const mkRepo = (name, commits) => { const d = join(sb.dir, name); mkdirSync(d, { recursive: true });
     const g = (args, env = {}) => spawnSync('git', args, { cwd: d, encoding: 'utf8', env: { ...process.env, HOME: sb.dir, GIT_CONFIG_NOSYSTEM: '1', ...env } });
-    g(['init', '-q']); g(['config', 'user.email', 't@example.com']); g(['config', 'user.name', 't']);
+    g(['init', '-q']); g(['config', 'user.email', 'fixture']); g(['config', 'user.name', 'fixture']);
     for (const [msg, when] of commits) { writeFileSync(join(d, msg + '.txt'), msg); g(['add', '.']);
       g(['commit', '-q', '-m', msg], { GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when }); }
     return d; };
