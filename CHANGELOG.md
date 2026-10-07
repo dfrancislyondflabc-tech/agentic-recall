@@ -12,6 +12,22 @@ be checkable.
 
 ## [Unreleased]
 
+## [2.1.5] — 2026-10-07
+
+### Fixed
+- **A health check no longer throws away a loaded index it cannot reload, and an index dropped any other way gives its
+  memory back (MEM-106).** In the author's real Claude Desktop connector, 2.1.4 held **877 MB for 30 hours** after a
+  single search, although every 2.1.4 test had passed. Traced with Desktop's exact configuration: the 5-minute recall
+  honesty probe (a `canary` query) saw the conversation index that the capture walk had just rebuilt on disk, dropped the
+  loaded copy in order to adopt the new file, and then — correctly — was not allowed to load it. The index left the cache
+  with no `index unloaded` line and no collection; the idle sweep found an empty cache and stopped its timer, and the
+  garbage stayed for the life of the process. Now a canary query leaves a resident index alone (the next real search
+  adopts the new file exactly as before), and an index dropped without being reloaded within a second gets the same
+  collection an idle unload gets (`MEMORY_IDLE_GC=0` still turns it off). **Retrieval is unchanged:** a real search takes
+  the identical code path; 2.1.4 vs 2.1.5 over the author's real corpus, 88 query pairs (52 curated incl. phrasings, 36
+  conversation-index searches and `latest`s), every field identical, 0 errors. New public tests (5): the two that test the
+  fix fail on 2.1.4; each half of the fix removed is caught by its own check.
+
 ## [2.1.4] — 2026-10-06
 
 ### Fixed
