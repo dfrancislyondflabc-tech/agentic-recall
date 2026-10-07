@@ -2305,6 +2305,51 @@ group('MEM-104 — after an idle unload the server collects, so the memory actua
   check('MEM-104 [control]: MEMORY_IDLE_GC=0 turns it off', off.has === true && off.st === null && Array.isArray(off.swept) && off.swept.includes('curated'), JSON.stringify(off));
 }
 
+group('MEM-106 — a monitor never throws away a loaded index, and an index dropped without a reload gives its memory back');
+{
+  // 2026-10-06, Claude Desktop's real 2.1.4 connector held 877 MB for 30 hours after ONE client call. Reproduced with Desktop's exact env:
+  // the 5-min honesty probe (a canary `latest`) saw the staging index the capture walk had just rebuilt on disk, ADOPTED it by
+  // invalidate() — then could not reload it (a monitor never loads). The index left the cache with no "index unloaded", no GC; the
+  // sweep found an empty cache and stopped its timer, and the garbage stayed for the life of the process.
+  const sb = sandbox({ MEMORY_INDEX_IDLE_MIN: '10' });
+  mkdirSync(join(sb.dir, 'mem'), { recursive: true });
+  writeFileSync(join(sb.dir, 'mem', 'kiln.md'), '---\nname: kiln\ndescription: the kiln firing schedule\n---\n\nThe kiln fires at 1200 degrees.\n');
+  const CF = JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'config.js')).href);
+  const r = run(sb.env, `
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    const S = await import(SRCH); S.invalidate();
+    const C = await import(${CF});
+    const gcState = () => (typeof S.idleGcState === 'function' ? S.idleGcState() : null);
+    await S.search('kiln fires', { limit: 3 });                       // a client loads curated
+    const loaded0 = S.loadedScopes();
+    // someone else (the capture walk, in production) rebuilds the index on disk, with new content
+    const { writeFileSync: wf } = await import('node:fs'); const { join: jn } = await import('node:path');
+    await new Promise((res) => setTimeout(res, 20));
+    wf(jn(process.env.MEMORY_DIR, 'glaze.md'), '---\\nname: glaze\\ndescription: the celadon glaze recipe\\n---\\n\\nCeladon glaze needs iron oxide.\\n');
+    await buildIndexOver(process.env.MEMORY_DIR, process.env.MEMORY_INDEX);
+    await C.withQuerySource('canary', () => S.latest('kiln', { scope: 'curated', limit: 3 }));   // the honesty probe's query
+    const afterCanary = S.loadedScopes();
+    // a client search must still ADOPT the rebuilt index (the feature the adopt block exists for)
+    const res = await S.search('celadon glaze iron oxide', { limit: 3 });
+    const adopted = (res.results || []).map((x) => x.name);
+    // an index dropped and NOT reloaded gives its memory back; one that is reloaded at once does not need to
+    const before = gcState();
+    S.invalidate('curated');
+    await new Promise((res2) => setTimeout(res2, 1600));
+    const afterDrop = gcState();
+    await S.search('kiln fires', { limit: 3 });
+    S.invalidate('curated'); S.getIndex({ scope: 'curated', reload: true });
+    await new Promise((res2) => setTimeout(res2, 1600));
+    const afterReload = gcState();
+    out({ loaded0, afterCanary, adopted, before, afterDrop, afterReload });`);
+  check('MEM-106 [setup]: the client search loaded curated', Array.isArray(r.loaded0) && r.loaded0.includes('curated'), JSON.stringify(r.loaded0));
+  check('MEM-106: a canary query over a newer on-disk index leaves the loaded copy in place (2.1.4 dropped it, unreloaded)', Array.isArray(r.afterCanary) && r.afterCanary.includes('curated'), JSON.stringify(r.afterCanary));
+  check('MEM-106 [regression]: the next CLIENT search still adopts the rebuilt index and finds the new memory', Array.isArray(r.adopted) && r.adopted.includes('glaze'), JSON.stringify(r.adopted));
+  check('MEM-106: an index dropped by invalidate() and not reloaded gets a collection (2.1.4: none)', r.afterDrop && r.afterDrop.ran === true && JSON.stringify(r.afterDrop) !== JSON.stringify(r.before) && (r.afterDrop.scopes || []).includes('curated'), JSON.stringify({ before: r.before, afterDrop: r.afterDrop }));
+  check('MEM-106 [control]: dropped and reloaded at once → no extra collection', JSON.stringify(r.afterReload) === JSON.stringify(r.afterDrop), JSON.stringify({ afterDrop: r.afterDrop, afterReload: r.afterReload }));
+  cleanupSandbox(sb.dir);
+}
+
 group('MEM-103 — only a CLIENT request keeps an index alive; a background caller never resets its idle clock');
 {
   // 2026-10-02: Claude Desktop's connector loaded staging for a client at 18:29Z and still held it (1.2 GB) seven hours later,
