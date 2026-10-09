@@ -95,6 +95,10 @@ try {
   const init = await call('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'real-book', version: '0' } });
   const v = init.result?.serverInfo?.version;
   v ? ok(`server handshake: agentic-recall ${v}`) : bad('no serverInfo from initialize');
+  // MEM-108: on 2.1.5's release this job asked for @2 before npm served 2.1.5, ran 2.1.4, and passed.
+  // Asked for an exact version, the server that answers must BE that version.
+  const exact = /@(\d+\.\d+\.\d+(?:-[\w.]+)?)$/.exec(SPEC);
+  if (exact && v && v !== exact[1]) bad(`asked for ${SPEC} but the server is ${v} — this run checked the wrong release`);
   srv.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
 
   const imported = await tool('memory_write', { action: 'import', path: bookPath, category: 'books' });

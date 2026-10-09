@@ -33,10 +33,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
+      # MEM-108: a release event fires ~1 min after `npm publish`, BEFORE the registry serves the new
+      # version. Wait for it (≤10 min), then check exactly the version that was seen served.
+      - name: wait until npm serves the version
+        id: wait
+        run: node scripts/wait-for-registry.mjs ${{ github.event.inputs.version }}
       # No `npm ci` on purpose: this job must not depend on the checkout's dependencies. It fetches
       # the published package and installs THAT, the way a stranger does.
       - name: check the published artefact
-        run: node scripts/check-published.mjs ${{ github.event.inputs.version }}
+        run: node scripts/check-published.mjs ${{ steps.wait.outputs.version }}
 
   # 🟥 THE GAP THE OTHER JOBS LEFT. `published` above installs the artefact and checks its shape.
   # ci.yml's `real-book-windows` imports a REAL Gutenberg book — but from the CHECKOUT. So the
@@ -55,5 +60,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
+      # MEM-108: this job used to ask for agentic-recall@2 and, racing the registry on 2.1.5's release,
+      # ran 2.1.4 and PASSED. Now it waits for, and installs, the exact version.
+      - name: wait until npm serves the version
+        id: wait
+        run: node scripts/wait-for-registry.mjs ${{ github.event.inputs.version }}
       - name: install from npm and do real work
-        run: node test/public/published-real-book.mjs ${{ github.event.inputs.version }}
+        run: node test/public/published-real-book.mjs agentic-recall@${{ steps.wait.outputs.version }}

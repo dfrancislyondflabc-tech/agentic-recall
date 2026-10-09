@@ -59,3 +59,17 @@ Bug reports and measured retrieval improvements are very welcome. So are portabi
 Windows in particular is under-tested. Feature requests that add a new storage backend or a
 network service are probably a different project: this one is deliberately a local, file-backed,
 single-user tool.
+
+## Releasing (maintainers)
+
+In this order. A release is not finished until the last command says so.
+
+1. `npm test` and `npm run check:release` on the release commit, with a clean tree — read the exit codes.
+2. `npm publish` (web/passkey auth), then `npm run check:published` once the registry serves it.
+3. Tag `vX.Y.Z`, push it, and create the GitHub release — that starts the "published artefact" workflow,
+   which waits for npm to serve the exact version before it checks anything (`scripts/wait-for-registry.mjs`).
+4. `~/bin/mcp-publisher publish` for the MCP registry listing.
+5. **`npm run check:after-release`** — waits for that release's CI and "published artefact" runs, refuses a
+   green that ran a different release, and checks npm `latest`, the tag, the GitHub release and the MCP
+   registry. Only `RELEASED X.Y.Z — every check green.` means released. (Added after 2.1.5, whose
+   release-time run failed unseen for two days: the pre-release gate cannot see a run that does not exist yet.)

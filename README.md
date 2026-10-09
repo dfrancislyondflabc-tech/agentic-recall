@@ -410,7 +410,7 @@ npm test             # self-contained: builds its own fixture corpus, needs none
 npm run verify       # the same check under its other name
 ```
 
-`npm test` drives the real server over raw stdio JSON-RPC and exercises all thirteen actions
+`npm test` drives the real server over raw stdio JSON-RPC and exercises both tools and all fourteen actions
 against a temporary corpus it writes itself, so it is meaningful on a machine with no memories at
 all. The exit code is the verdict. (The author's full suite is not public — it asserts against one
 particular corpus and would fail for you. See `CONTRIBUTING.md`.)
@@ -427,8 +427,9 @@ npm run analyse-queries         # what has been asked of it
 
 ## The tool
 
-One gateway tool, thirteen actions: `search`, `get`, `neighbors`, `latest`, `thread`,
-`verify`, `index`, `index_status`, `probe_status`, `promote`, `demote`, `import`, `capture`.
+Two tools, fourteen actions. `memory` reads and never writes your notes: `search`, `get`, `neighbors`,
+`latest`, `sessions`, `thread`, `verify`, `index_status`, `probe_status`. `memory_write` holds every
+action that changes something: `import`, `capture`, `index`, `promote`, `demote`.
 The four you will use daily are documented in full below.
 
 ### `memory({action: "search", query, limit?, scope?})`
@@ -1610,7 +1611,7 @@ header of `lib/scheduler.js`.
 
 ```
 index.js                 MCP server entry (stdio; stderr-only logging)
-tools/memory.js          the one gateway tool, dispatching on `action`
+tools/memory.js          the two tools (`memory` read-only, `memory_write`), dispatching on `action`
 lib/config.js            paths + THE EMBEDDING CONTRACT + retrieval knobs
 lib/corpus.js            frontmatter parse, headings, wikilinks, tier read/write
 lib/bm25.js              tokeniser (light stemmer) + Okapi BM25F, 3 field groups
