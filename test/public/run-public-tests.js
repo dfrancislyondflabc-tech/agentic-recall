@@ -1554,6 +1554,15 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 // =============================================================================================
+// MEM-110 — A CURATED INDEX MORE THAN 8 FILES BEHIND IS REBUILT IN THE BACKGROUND. It used to be refused forever (the
+// author's sat at 2026-09-28 with 166 files changed): staging is the ingest's job, memory_write is not how memories are
+// usually saved, and the inline repair stops at 8. Real server over stdio, plus the kill-switch control. Budget: ~15 s.
+{
+  const { staleBackgroundRebuildTests } = await import('./stale-background-rebuild.mjs');
+  await staleBackgroundRebuildTests({ check, group });
+}
+
+// =============================================================================================
 // MEM-67 — THE LAST EXCHANGE OF A HOOK-LESS INSTALL. The sibling of the check above, and the one
 // the Windows PC test of 1.7.1 asked for: the timer used to defer the in-flight exchange on every
 // tick, so the newest thing in a chat reached the store only when the hourly audit healed it (~14

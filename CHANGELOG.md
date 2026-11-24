@@ -12,6 +12,18 @@ be checkable.
 
 ## [Unreleased]
 
+### Fixed
+- **A curated index more than 8 files behind is now rebuilt in the background instead of being refused forever
+  (MEM-110).** On the author's machine the curated index was last built 2026-09-28 and **166 memory files** had changed
+  since: the capture job rebuilds the conversation index only, `memory_write` reindexes but memories are usually saved
+  with ordinary file tools, and the inline repair refuses above 8 changed files ("a full rebuild in disguise") — so
+  after one busy day every search was stamped STALE and nothing ever repaired it. Over the limit, the same background
+  rebuild the corrupt-index repair uses (MEM-59) now starts off the request: that search is answered from the stale
+  index (stamped, saying a rebuild started), and the next search after it lands is current. Incremental — unchanged
+  sections come from the vector cache. Never started while the embedding model is unavailable (that build would be
+  keyword-only, worse than the stale index). Kill switch: `MEMORY_STALE_BACKGROUND_REBUILD=0` restores the refusal.
+  Test: `test/public/stale-background-rebuild.mjs` (fails on 2.1.5: still stale after 120 s).
+
 ## [2.1.5] — 2026-10-07
 
 ### Fixed
