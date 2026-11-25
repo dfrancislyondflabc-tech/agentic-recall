@@ -1563,6 +1563,15 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 // =============================================================================================
+// MEM-111 — EMBEDDING NEVER SWELLS MEMORY. 16 texts per pass in arrival order padded short chunks to the longest and
+// the ONNX runtime kept the peak: same 240 chunks, old code 1,279 MB, new 345 MB; indexing waits under macOS memory
+// pressure, queries never do. Budget: ~40 s.
+{
+  const { embedMemoryTests } = await import('./embed-memory-bounded.mjs');
+  await embedMemoryTests({ check, group });
+}
+
+// =============================================================================================
 // MEM-67 — THE LAST EXCHANGE OF A HOOK-LESS INSTALL. The sibling of the check above, and the one
 // the Windows PC test of 1.7.1 asked for: the timer used to defer the in-flight exchange on every
 // tick, so the newest thing in a chat reached the store only when the hourly audit healed it (~14
