@@ -10,7 +10,7 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
-## [Unreleased]
+## [2.2.0] — 2026-11-25
 
 ### Fixed
 - **A search of the conversation index no longer holds 4 GB (MEM-113).** Every staging search asks which conversations
@@ -42,6 +42,15 @@ be checkable.
   Test: `test/public/stale-background-rebuild.mjs` (fails on 2.1.5: still stale after 120 s).
 
 ### Added
+- **The embedder is a setting; Harrier-OSS-v1 0.6B is the measured upgrade (MEM-112, MEM-121).** `MEMORY_EMBEDDER=harrier`
+  or local-config `"embedder": "harrier"`; **bge-small stays the default.** Harrier runs in ONE shared embedding helper
+  per Mac (`~/Library/Application Support/EmbedHelper`, node-llama-cpp on Metal, exits when idle) — never in the server
+  process. On the author's real corpus (90 answerable + 20 unanswerable questions): top-5 **68 → 79**, found first 53 → 57,
+  false "nothing found" 3 → 0, unanswerable still refused 19/20; chosen on half the questions, reported on the other half
+  (41/45 vs 34/45). It brings its own measured settings: fusion keyword 0.30 / meaning 0.54 (bge keeps 0.42/0.42, its
+  best), absence floor 0.38 scaled to 0.261. Each embedder has its OWN index and cache files (`.staging-index.harrier.json`,
+  `.vector-cache.harrier.bin`, …), so a changeover never rewrites what a running bge server reads, and an index built by
+  one model is refused by name under the other. Index format 3 is on by default for these files.
 - **Standing rules come back beside the results when the work touches their area (MEM-120, the rules lane).** A memory
   declares `metadata.appliesTo: "public/, *.html, served file"` (folders, globs, file names, or topic words); a `search`
   whose query or new `touching` paths fall in that area returns it under `rules` — outside the ranking, never instead of
