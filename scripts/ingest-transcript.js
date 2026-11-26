@@ -34,6 +34,7 @@
 // corpus should not carry.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
+import { fileLines } from '../lib/read-head.js';
 import { renameWithRetry } from '../lib/fs-retry.js';
 import { join, basename } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -196,8 +197,8 @@ const sessionId = basename(file, '.jsonl');
 //     `alice@acme` — which its regex requires a dotted domain to match, and therefore does not.
 //     The identity half then survives in full. Splitting a scrubbed line can only cut inside an
 //     already-anonymous `[email@<domain>]` marker, which loses nothing.
-function deriveTitle(raw) {
-  for (const line of raw.split('\n')) {
+function deriveTitle(lines) {
+  for (const line of lines) {
     if (!line.trim()) continue;
     let j; try { j = JSON.parse(line); } catch { continue; }
     const c = j.operation === 'enqueue' ? j.content
@@ -268,7 +269,7 @@ let interjectionsUnattached = 0;        // typed before any human turn existed: 
 // release a half-written reply. Erring toward "still live" is the safe direction, as everywhere
 // else in this file.
 let lastAssistantStopReason;
-for (const line of readFileSync(file, 'utf8').split('\n')) {
+for (const line of fileLines(file)) {   // MEM-114: a line at a time — never the whole (up to 1.2 GB) transcript
   if (!line.trim()) continue;
   let j; try { j = JSON.parse(line); } catch { continue; }
   if (j.message?.role === 'assistant' && j.isSidechain !== true) lastAssistantStopReason = j.message?.stop_reason ?? null;
@@ -605,7 +606,7 @@ const scrub = (t) => scrubAddresses(redact(String(t ?? '')).text);
 
 // Derived HERE, not beside sessionId, because scrub() closes over the address rules above and a
 // top-level call any earlier hits their temporal dead zone. See deriveTitle (~:135).
-const sessionTitle = deriveTitle(readFileSync(file, 'utf8'));
+const sessionTitle = deriveTitle(fileLines(file));   // MEM-114: stops at the first human line
 
 // ── C1. THE COMMITS GO IN AT WRITE TIME ──────────────────────────────────────
 // Measured: of 12 commits made during one session, that session's own text named

@@ -1572,6 +1572,86 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 // =============================================================================================
+// MEM-113 — A STAGING SEARCH NEVER READS A WHOLE TRANSCRIPT. The scheduled-task check read every recent transcript
+// whole (up to 1.2 GB) to look at 64 KB: one real search 1,410 -> 5,134 MB, held at 4.2 GB. Budget: ~5 s.
+{
+  const { readHeadMemoryTests } = await import('./read-head-memory.mjs');
+  await readHeadMemoryTests({ check, group });
+}
+
+// =============================================================================================
+// MEM-115 — THE VECTORS IN ONE BINARY SIDECAR (index format 3). The base64 vectors were 64% of the real 156 MB staging
+// index and existed twice while it was parsed: 1,074 MB to load; as 57 MB JSON + 74 MB .f32, 336 MB. Read always, written
+// only when switched on (MEMORY_VEC_SIDECAR=1), because a server from before this release refuses format 3.
+group('MEM-115 — vectors in one binary sidecar (format 3): same vectors, same ranking, corrupt sidecar never silent');
+{
+  const sb = sandbox();
+  mkdirSync(sb.env.MEMORY_DIR, { recursive: true });
+  const w = (n, d2, b) => writeFileSync(join(sb.env.MEMORY_DIR, n + '.md'), '---\nname: ' + n + '\ndescription: ' + d2 + '\n---\n\n' + b + '\n');
+  for (let i = 0; i < 8; i++) w('note-' + i, 'workshop note ' + i, 'The kiln fires at 1200 degrees for eight hours. Spoke tension is checked. Entry ' + i + '. ' + 'More words about glaze and clay. '.repeat(40 * (i % 3)));
+  w('anodise', 'the anodising bath', 'The anodising bath is held at nineteen degrees for forty minutes.');
+  w('taxes', 'quarterly taxes', 'Quarterly taxes are due in April, June, September and January.');
+  const v2 = join(sb.dir, 'v2.json'), v3 = join(sb.dir, 'v3.json');
+  const roots = JSON.stringify([{ dir: sb.env.MEMORY_DIR, corpus: 'curated', primary: true }]);
+  const QS = JSON.stringify(['the kiln fires at 1200 degrees', 'quarterly taxes are due in April', 'the anodising bath is held at nineteen degrees', 'spoke tension is checked']);
+  const probe = `const probe = async (path) => { process.env.MEMORY_INDEX = path; const { search, invalidate } = await import(SRCH); invalidate();
+      const o = []; for (const q of ${QS}) { const x = await search(q, { limit: 5 }); o.push([...(x.results || []), ...(x.bestWeak ? [].concat(x.bestWeak) : [])].map((y) => y.name + '|' + Number(y.score).toFixed(6)).join(',')); } return o; };`;
+  const r = run({ ...sb.env, MEMORY_VEC_SIDECAR: '' }, `
+    const { buildIndex, loadIndex } = await import(IDX);
+    const fs = await import('node:fs'); const path = await import('node:path');
+    ${probe}
+    await buildIndex({ force: true, dir: ${roots}, out: ${JSON.stringify(v2)} });
+    const j2 = JSON.parse(fs.readFileSync(${JSON.stringify(v2)}, 'utf8'));
+    process.env.MEMORY_VEC_SIDECAR = '1';
+    await buildIndex({ force: true, dir: ${roots}, out: ${JSON.stringify(v3)} });
+    const txt3 = fs.readFileSync(${JSON.stringify(v3)}, 'utf8'); const j3 = JSON.parse(txt3);
+    const side = j3.vectors && path.join(${JSON.stringify(sb.dir)}, j3.vectors.file);
+    const a = loadIndex(${JSON.stringify(v2)}), b = loadIndex(${JSON.stringify(v3)});
+    let same = a.docs.length === b.docs.length && a.docs.length > 0, n = 0;
+    a.docs.forEach((d, i) => { const e = b.docs[i];
+      const eq = (x, y) => x && y && x.length === y.length && x.every((v, k) => v === y[k]);
+      if (!eq(d.summaryVec, e.summaryVec)) same = false;
+      d.chunks.forEach((c, k) => { n++; if (!eq(c.vec, e.chunks[k].vec)) same = false; }); });
+    const rank2 = await probe(${JSON.stringify(v2)}), rank3 = await probe(${JSON.stringify(v3)});
+    // incremental (reuse) under format 3 == full rebuild under format 3
+    fs.writeFileSync(path.join(process.env.MEMORY_DIR, 'taxes.md'), '---\\nname: taxes\\ndescription: quarterly taxes\\n---\\n\\nQuarterly taxes are due in April and June. REVISED.\\n');
+    const firstSide = j3.vectors.file;
+    const old = new Date(Date.now() - 11 * 60_000); fs.utimesSync(side, old, old);   // the previous sidecar is 11 minutes old
+    await buildIndex({ force: false, dir: ${roots}, out: ${JSON.stringify(v3)} });
+    const incr = await probe(${JSON.stringify(v3)});
+    const j3b = JSON.parse(fs.readFileSync(${JSON.stringify(v3)}, 'utf8'));
+    const sweptOld = !fs.existsSync(side);
+    const keptNewSide = fs.existsSync(path.join(${JSON.stringify(sb.dir)}, j3b.vectors.file)) && j3b.vectors.file !== firstSide;
+    await buildIndex({ force: true, dir: ${roots}, out: ${JSON.stringify(v3)} });
+    const full = await probe(${JSON.stringify(v3)});
+    const j3c = JSON.parse(fs.readFileSync(${JSON.stringify(v3)}, 'utf8'));
+    const youngKept = fs.existsSync(path.join(${JSON.stringify(sb.dir)}, j3b.vectors.file));   // <10 min old: a reader may still want it
+    // a missing / a short sidecar must read as CORRUPT, never as an index without vectors
+    const cur = path.join(${JSON.stringify(sb.dir)}, j3c.vectors.file);
+    const bytes = fs.readFileSync(cur);
+    fs.writeFileSync(cur, bytes.subarray(0, bytes.length - 4));
+    const short = loadIndex(${JSON.stringify(v3)});
+    fs.unlinkSync(cur);
+    const gone = loadIndex(${JSON.stringify(v3)});
+    out({ f2: j2.header.formatVersion, f3: j3.header.formatVersion, b64In2: typeof j2.docs[0].chunks[0].vec === 'string',
+          slotIn3: typeof j3.docs[0].chunks[0].vec === 'number', noBase64In3: !/"vec":"[A-Za-z0-9+/=]{100,}/.test(txt3),
+          sideBytes: fs.statSync(side, { throwIfNoEntry: false }) ? null : 'swept', meta: j3.vectors, same, n,
+          rankSame: JSON.stringify(rank2) === JSON.stringify(rank3) && rank2.every((x) => x.length > 0), rank2: rank2[0],
+          incrSame: JSON.stringify(incr) === JSON.stringify(full) && incr.every((x) => x.length > 0), sweptOld, keptNewSide, youngKept,
+          short: { present: short.present, corrupt: short.corrupt, dense: short.dense }, gone: { present: gone.present, corrupt: gone.corrupt, dense: gone.dense } });`);
+  check('default (switch off): the index is still written as format 2, base64 vectors — older servers keep reading it', r.f2 === 2 && r.b64In2 === true, JSON.stringify(r).slice(0, 300));
+  check('MEMORY_VEC_SIDECAR=1: format 3, slot numbers in the JSON, no base64 anywhere, sidecar size = count x dim x 4', r.f3 === 3 && r.slotIn3 && r.noBase64In3 && r.meta && r.meta.bytes === r.meta.count * r.meta.dim * 4, JSON.stringify(r).slice(0, 300));
+  check(`format 3 loads every vector bit-identical to format 2 (${r.n} chunks + summaries)`, r.same === true && r.n > 8, JSON.stringify(r).slice(0, 300));
+  check('...and ranks identically: same results, same scores to 6 places, on 4 queries', r.rankSame === true, JSON.stringify(r.rank2));
+  check('an incremental format-3 build (vectors reused from the sidecar) ranks identically to a full rebuild', r.incrSame === true);
+  check('a rebuild writes a NEW sidecar and sweeps the one over 10 minutes old', r.sweptOld === true && r.keptNewSide === true);
+  check('...but never one under 10 minutes old (a reader may have just read the index that names it)', r.youngKept === true);
+  check('a SHORT sidecar reads as a corrupt index (rebuilt), never as an index without vectors', r.short && r.short.present === false && r.short.corrupt === true, JSON.stringify(r.short));
+  check('a MISSING sidecar reads as a corrupt index (rebuilt), never as an index without vectors', r.gone && r.gone.present === false && r.gone.corrupt === true, JSON.stringify(r.gone));
+  cleanupSandbox(sb.dir);
+}
+
+// =============================================================================================
 // MEM-67 — THE LAST EXCHANGE OF A HOOK-LESS INSTALL. The sibling of the check above, and the one
 // the Windows PC test of 1.7.1 asked for: the timer used to defer the in-flight exchange on every
 // tick, so the newest thing in a chat reached the store only when the hourly audit healed it (~14

@@ -17,6 +17,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { indexPath, stagingIndexPath } from '../lib/config.js';
 import { loadCache, cacheSet, flushCache } from '../lib/vector-cache.js';
 import { toVec } from '../lib/vec.js';
+import { readIndexFile } from '../lib/index-store.js';   // MEM-115: reads either format (base64 or the .f32 sidecar)
 
 const cache = loadCache();
 const before = cache.vectors.size;
@@ -25,7 +26,8 @@ let docs = 0, chunks = 0, summaries = 0;
 for (const p of [indexPath(), stagingIndexPath()].filter(Boolean)) {
   if (!existsSync(p)) { console.log(`  skip (absent): ${p}`); continue; }
   let idx;
-  try { idx = JSON.parse(readFileSync(p, 'utf8')); } catch (e) { console.log(`  skip (unreadable): ${p}`); continue; }
+  idx = readIndexFile(p);
+  if (!idx) { console.log(`  skip (unreadable): ${p}`); continue; }
   for (const d of idx.docs || []) {
     docs++;
     // Reconstructed exactly as buildIndex composes it, or the key will not match.
