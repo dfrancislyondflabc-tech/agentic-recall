@@ -1,0 +1,39 @@
+{
+ "_meta": {
+  "generatedBy": "scripts/derive-absence-floors.js",
+  "generatedAt": "2026-11-26T12:47:51.382Z",
+  "sample": 40,
+  "rule": "Each floor is curated's, scaled by the ratio of this corpus's median to curated's median OF THE STATISTIC THAT FLOOR MEASURES (score floor by top-1 scores, coverage floor by lexical coverage), over self-derived queries (each document's own heading or description). phraseFloor and orphanFloor are NOT rescaled: both are already corpus-relative, and orphanShare is the fabricated-term detector.",
+  "curatedIsIdentity": "curated re-derives to its shipped constants by construction (ratio 1.0) — asserted by the suite.",
+  "neverHandEdit": "Regenerate with the script. A hand-tuned floor is a constant that has stopped being derived."
+ },
+ "corpora": {
+  "curated": {
+   "n": 40,
+   "medianTopScore": 0.3535,
+   "medianCoverage": 0.495,
+   "scoreFloor": 0.261,
+   "coverageFloor": 0.2,
+   "ratioScore": 1,
+   "ratioCoverage": 1
+  },
+  "books": {
+   "n": 40,
+   "medianTopScore": 0.1054,
+   "medianCoverage": 0.4413,
+   "ratioScore": 0.2982,
+   "ratioCoverage": 0.8915,
+   "scoreFloor": 0.0778,
+   "coverageFloor": 0.1783
+  },
+  "manuals": {
+   "n": 40,
+   "medianTopScore": 0.0988,
+   "medianCoverage": 0.389,
+   "ratioScore": 0.2795,
+   "ratioCoverage": 0.7859,
+   "scoreFloor": 0.0729,
+   "coverageFloor": 0.1572
+  }
+ }
+}

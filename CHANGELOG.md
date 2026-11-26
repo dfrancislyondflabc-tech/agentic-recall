@@ -10,6 +10,17 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
+## [Unreleased]
+
+### Fixed
+- **MEM-122 — Harrier now has its own per-corpus absence floors.** In 2.2.0 a non-default embedder ignored the
+  bge-derived table (correctly: its scores are on another scale) but then gave every library corpus curated's floor
+  (0.261), while a real answer in a book or manual scores a median of about 0.10 under Harrier. Each embedder now
+  reads its own derived table (`lib/absence-floors.<embedder>.json`, made by `scripts/derive-absence-floors.js`
+  under that embedder); with no table the scaled base applies as before. Measured on held-out questions (not the
+  derivation's own): manuals wrongly answered "nothing found" 4/37 → 0/37, right manual in the top 3 32 → 34; books
+  unchanged; invented terms still refused 24/24 either way.
+
 ## [2.2.0] — 2026-11-25
 
 ### Fixed

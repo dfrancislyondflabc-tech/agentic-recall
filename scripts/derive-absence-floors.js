@@ -37,7 +37,7 @@ import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { search, getIndex } from '../lib/search.js';
-import { RETRIEVAL, libraryCorpora } from '../lib/config.js';
+import { RETRIEVAL, libraryCorpora, EMBEDDER } from '../lib/config.js';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
@@ -136,7 +136,7 @@ const out = {
   },
   corpora
 };
-const dest = arg('--out', join(ROOT, 'lib', 'absence-floors.json'));
+const dest = arg('--out', join(ROOT, 'lib', EMBEDDER === 'bge-small' ? 'absence-floors.json' : `absence-floors.${EMBEDDER}.json`));   // MEM-122: one table per embedder
 writeFileSync(dest, JSON.stringify(out, null, 1) + '\n', 'utf8');
 
 console.log(`\ncorpus      n   medianTop  medianCov   ratioS  ratioC   scoreFloor  coverageFloor`);

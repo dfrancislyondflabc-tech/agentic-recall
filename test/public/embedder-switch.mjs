@@ -7,7 +7,7 @@
 // ratio (0.38 -> 0.261) and ignores the bge-derived per-corpus table; and — when the helper is installed — embeds
 // through it at 1024 wide with the query instruction applied once.
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -27,7 +27,13 @@ export async function embedderSwitchTests({ check, group }) {
   check('default embedder is bge-small, 384 wide, shipped floor 0.38, per-corpus table in force', d.embedder === 'bge-small' && d.dim === 384 && d.floor === 0.38 && d.books !== 0.38, JSON.stringify(d));
   const h = probe({ MEMORY_EMBEDDER: 'harrier' }, CFG);
   check('harrier: its own model, 1024 wide, last-token pooling (a bge index header no longer matches)', h.model === 'microsoft/harrier-oss-v1-0.6b' && h.dim === 1024 && h.pooling === 'last', JSON.stringify(h));
-  check('harrier: absence scoreFloor scaled by the measured ratio (0.38 -> 0.261), bge-derived table not applied', h.floor === 0.261 && h.books === 0.261, JSON.stringify(h));
+  check('harrier: absence scoreFloor scaled by the measured ratio (0.38 -> 0.261)', h.floor === 0.261, JSON.stringify(h));
+  // MEM-122: each embedder reads its OWN derived table — never bge's numbers, never curated's floor on a library corpus.
+  const HT = JSON.parse(readFileSync(join(ROOT, 'lib', 'absence-floors.harrier.json'), 'utf8')).corpora;
+  const BT = JSON.parse(readFileSync(join(ROOT, 'lib', 'absence-floors.json'), 'utf8')).corpora;
+  check('harrier: library floors come from the Harrier-derived table (not bge\'s, not curated\'s 0.261)',
+    h.books === HT.books.scoreFloor && h.books !== BT.books.scoreFloor && h.books < 0.261, JSON.stringify({ books: h.books, harrierTable: HT.books.scoreFloor, bgeTable: BT.books.scoreFloor }));
+  check('harrier table: curated re-derives to its own shipped floor (ratio 1.0)', HT.curated.scoreFloor === 0.261 && HT.curated.ratioScore === 1, JSON.stringify(HT.curated));
   // MEM-121: own files per embedder, its own measured fusion weights, the vector sidecar on by default for it
   const FILES = `const c = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'config.js')).href)}); const v = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'vector-cache.js')).href)});
     const b = (p) => p && p.split(/[\\\\/]/).pop();
