@@ -14,14 +14,14 @@
 import { spawnSync } from 'node:child_process';
 import { stopChild } from './sandbox-cleanup.mjs';   // repo rule: tests that spawn import the cleanup helper (spawnSync + timeout ends its child itself)
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const words = (n, seed = 0) => Array.from({ length: n }, (_, i) => 'term' + ((i * 7 + seed) % 97)).join(' ');
 
 export async function embedMemoryTests({ check, group }) {
   group('MEM-111 — embedding never swells memory (memory-bounded passes, waits under memory pressure)');
-  const E = await import(join(ROOT, 'lib', 'embed.js'));
+  const E = await import(pathToFileURL(join(ROOT, 'lib', 'embed.js')).href);
   const cost = (p) => p.length * Math.min(Math.max(...p.map((x) => x.text.length)), E.MODEL_READS_CHARS);
 
   const mix = [...Array(120)].map((_, i) => ({ id: i, text: i % 3 ? words(8, i) : words(450, i) })).sort((a, b) => a.text.length - b.text.length);
@@ -55,7 +55,7 @@ export async function embedMemoryTests({ check, group }) {
 
   // real footprint, in a child process (footprint is macOS-only)
   if (process.platform === 'darwin') {
-    const code = `import { embedPassages } from ${JSON.stringify(join(ROOT, 'lib', 'embed.js'))};
+    const code = `import { embedPassages } from ${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'embed.js')).href)};
       import { execSync } from 'node:child_process';
       const w = (n, s) => Array.from({ length: n }, (_, i) => 'term' + ((i * 7 + s) % 97)).join(' ');
       const fp = () => Number((execSync('footprint ' + process.pid + ' 2>/dev/null | head -2').toString().match(/Footprint: (\\d+)/) || [0, -1])[1]);

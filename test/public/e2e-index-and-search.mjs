@@ -70,8 +70,11 @@ check('an index builds over a plain folder of memories', b.status === 0,
   const cachePath = join(dir, 'vec-cache.json');
   const cEnv = { ...env, MEMORY_VECTOR_CACHE: cachePath, MEMORY_INDEX: join(dir, 'cache-probe.json') };
   const first = spawnSync(process.execPath, [join(ROOT, 'scripts', 'build-index.js')], { env: cEnv, encoding: 'utf8', windowsHide: true });
-  check('a vector cache file is written where the code says it is', existsSync(cachePath),
-    'expected ' + cachePath + ' :: ' + String(first.stderr || '').slice(-160));
+  // MEM-116: the cache is written as the binary `<name>.bin` beside the configured name (the JSON is read once, never written)
+  const { binPath } = await import(pathToFileURL(join(ROOT, 'lib', 'vector-cache.js')).href);
+  const written = binPath(cachePath);
+  check('a vector cache file is written where the code says it is', existsSync(written),
+    'expected ' + written + ' :: ' + String(first.stderr || '').slice(-160));
   // AND THE DEFAULT PATH ITSELF, which is where the bug actually lived. The two builds above pin
   // MEMORY_VECTOR_CACHE, so they exercise caching but NOT the derivation that was broken -- and a
   // test that cannot fail on the bug it names is worse than no test. Asserting the shape instead

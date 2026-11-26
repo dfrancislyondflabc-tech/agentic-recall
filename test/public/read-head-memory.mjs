@@ -15,15 +15,15 @@ import { stopChild, cleanupSandbox } from './sandbox-cleanup.mjs';   // repo rul
 import { mkdtempSync, writeFileSync, truncateSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const line = (o) => JSON.stringify(o) + '\n';
 
 export async function readHeadMemoryTests({ check, group }) {
   group('MEM-113 — a staging search never reads a whole transcript (head-only read)');
-  const { readHead, fileLines } = await import(join(ROOT, 'lib', 'read-head.js'));
-  const { excludedSessionReason, forgetCapturable } = await import(join(ROOT, 'lib', 'capturable.js'));
+  const { readHead, fileLines } = await import(pathToFileURL(join(ROOT, 'lib', 'read-head.js')).href);
+  const { excludedSessionReason, forgetCapturable } = await import(pathToFileURL(join(ROOT, 'lib', 'capturable.js')).href);
   const dir = mkdtempSync(join(tmpdir(), 'mem113-'));
   try {
     // identical output to the whole-file read, including 2-, 3- and 4-byte characters across the edge
@@ -65,7 +65,7 @@ export async function readHeadMemoryTests({ check, group }) {
       const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', timeout: 120000 });
       try { return JSON.parse((r.stdout || '').trim().split('\n').pop()); } catch (_) { return { error: (r.stderr || '').slice(-300) }; }
     };
-    const fixed = probe(`const { excludedSessionReason } = await import(${JSON.stringify(join(ROOT, 'lib', 'capturable.js'))});
+    const fixed = probe(`const { excludedSessionReason } = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'capturable.js')).href)});
       const b = process.memoryUsage().rss; const why = excludedSessionReason(${JSON.stringify(big)});
       console.log(JSON.stringify({ why, grewMB: Math.round((process.memoryUsage().rss - b) / 1048576) }));`);
     check('deciding a 400 MB transcript reads its head only: the process grows < 40 MB, and the decision is right', fixed.why === 'scheduled-task' && fixed.grewMB < 40, JSON.stringify(fixed));
@@ -81,7 +81,7 @@ export async function readHeadMemoryTests({ check, group }) {
 export async function afterQueryGcTests({ check, group }) {
   group('MEM-119 — garbage from a burst of queries is collected after it (debounced; never on the request path)');
   const probe = (env) => {
-    const code = `const S = await import(${JSON.stringify(join(ROOT, 'lib', 'search.js'))});
+    const code = `const S = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'search.js')).href)});
       let junk = []; for (let i = 0; i < 40; i++) junk.push(new Array(500000).fill(0).map((_, k) => ({ k })));   // ~200+ MB of objects
       junk = null;
       const t0 = Date.now(); S.scheduleAfterQueryGc(); const returnedMs = Date.now() - t0;
