@@ -1580,6 +1580,14 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 // =============================================================================================
+// MEM-116 — THE VECTOR CACHE IS ONE BINARY FILE. 190 MB of base64 JSON parsed on every build and rewritten whole even when
+// nothing was added; 30k vectors: 362 MB to load from JSON, 60 MB from the .bin. Budget: ~15 s.
+{
+  const { vectorCacheBinaryTests } = await import('./vector-cache-binary.mjs');
+  await vectorCacheBinaryTests({ check, group });
+}
+
+// =============================================================================================
 // MEM-115 — THE VECTORS IN ONE BINARY SIDECAR (index format 3). The base64 vectors were 64% of the real 156 MB staging
 // index and existed twice while it was parsed: 1,074 MB to load; as 57 MB JSON + 74 MB .f32, 336 MB. Read always, written
 // only when switched on (MEMORY_VEC_SIDECAR=1), because a server from before this release refuses format 3.
