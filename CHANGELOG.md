@@ -10,7 +10,7 @@ returns, or what a file on disk looks like. Internal refactors are left out. Whe
 because something measurably went wrong, the number is given — this project's claims are supposed to
 be checkable.
 
-## [Unreleased]
+## [2.2.1] — 2026-11-26
 
 ### Fixed
 - **MEM-122 — Harrier now has its own per-corpus absence floors.** In 2.2.0 a non-default embedder ignored the
