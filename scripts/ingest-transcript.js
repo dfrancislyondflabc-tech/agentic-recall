@@ -35,6 +35,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
 import { fileLines } from '../lib/read-head.js';
+import { createCommitCollector, bucketMarkers } from '../lib/commit-markers.js';
 import { renameWithRetry } from '../lib/fs-retry.js';
 import { join, basename } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -269,9 +270,12 @@ let interjectionsUnattached = 0;        // typed before any human turn existed: 
 // release a half-written reply. Erring toward "still live" is the safe direction, as everywhere
 // else in this file.
 let lastAssistantStopReason;
+// MEM-118: the commits this session ran ITSELF, from its own tool calls (lib/commit-markers.js). Off: MEMORY_CAPTURE_COMMIT_MARKERS=0.
+const commitCollector = process.env.MEMORY_CAPTURE_COMMIT_MARKERS === '0' ? null : createCommitCollector();
 for (const line of fileLines(file)) {   // MEM-114: a line at a time — never the whole (up to 1.2 GB) transcript
   if (!line.trim()) continue;
   let j; try { j = JSON.parse(line); } catch { continue; }
+  if (commitCollector) commitCollector.see(j);
   if (j.message?.role === 'assistant' && j.isSidechain !== true) lastAssistantStopReason = j.message?.stop_reason ?? null;
   if (isInterjection(j)) {
     const t = j.content.trim();
@@ -659,6 +663,7 @@ async function bucketCommits(list) {
 }
 
 const commitBuckets = await bucketCommits(exchanges);
+const markerBuckets = commitCollector ? bucketMarkers(exchanges, commitCollector.markers()) : new Map();
 const totalAttached = [...commitBuckets.values()].reduce((s, a) => s + a.length, 0);
 
 const words = (s, n) => s.split(/\s+/).filter(Boolean).slice(0, n).join(' ');
@@ -745,6 +750,17 @@ for (let idx = 0; idx < exchanges.length; idx++) {
         const c = carried || commitBuckets.get(exchanges.indexOf(ex)) || [];
         return c.length ? `  commits: ${c.slice(0, MAX_COMMITS_PER_EXCHANGE).map((x) => x.sha).join(' ')}` : null;
       })(),
+      // MEM-118: present only when this exchange ran a commit itself, so every other document is byte-identical.
+      ...(() => {
+        const mk = markerBuckets.get(exchanges.indexOf(ex)) || [];
+        if (!mk.length) return [];
+        const shas = [...new Set(mk.flatMap((m) => m.shas))];
+        const failed = mk.filter((m) => m.state === 'not-landed').length;
+        const quiet = mk.filter((m) => m.state === 'unconfirmed').length;
+        return [shas.length ? `  sessionCommits: ${shas.slice(0, MAX_COMMITS_PER_EXCHANGE).join(' ')}` : null,
+          failed ? `  commitAttemptsFailed: ${failed}` : null,
+          quiet ? `  commitRunsUnconfirmed: ${quiet}` : null];
+      })(),
       ...extraMeta,
       '---',
       ''
@@ -771,7 +787,18 @@ for (let idx = 0; idx < exchanges.length; idx++) {
         + cmts.map((c) => `- \`${c.sha}\` (${c.repo}) ${scrubAddresses(redact(c.subject || '').text)}`).join('\n')
         + '\n'
       : '';
-    return `${fm}**Asked:** ${ask}${added}\n\n${body}\n${commitBlock}${prev ? `\nPrevious: [[${prev}]]\n` : ''}`;
+    // MEM-118: what this exchange's OWN tool calls committed — decided from git's output, so a blocked commit reads as one.
+    const mk = markerBuckets.get(exchanges.indexOf(ex)) || [];
+    const markerBlock = mk.length
+      ? '\n**Commits this session ran here (its own tool calls):**\n'
+        + mk.map((m) => (m.state === 'landed'
+          ? m.shas.map((sh) => `- \`${sh}\` landed${m.repo ? ` (${m.repo})` : ''}`).join('\n')
+          : m.state === 'not-landed'
+            ? `- a commit attempt did NOT land${m.repo ? ` (${m.repo})` : ''} — git reported an error or nothing to commit`
+            : `- a commit ran without error${m.repo ? ` (${m.repo})` : ''} but printed no SHA (quiet commit) — likely landed; the commits above, matched by time, are the check`)).join('\n')
+        + '\n'
+      : '';
+    return `${fm}**Asked:** ${ask}${added}\n\n${body}\n${commitBlock}${markerBlock}${prev ? `\nPrevious: [[${prev}]]\n` : ''}`;
   };
   out.push({ name, file: `${name}.md`, mdFor, md: mdFor(ACCOUNT), descLen: desc.length, bodyLen: body.length, interjections: inter.length });
 }
@@ -782,6 +809,7 @@ console.log(`skipped    : replies under ${MIN_REPLY_CHARS} chars whose ask is un
 console.log(`interjected: ${out.reduce((s, o) => s + o.interjections, 0)} mid-turn message(s) folded into ${out.filter((o) => o.interjections).length} exchange(s)`
   + (interjectionsUnattached ? `; ${interjectionsUnattached} typed before any human turn and NOT kept` : '')
   + (interjectionsInShortReplies ? `; ${interjectionsInShortReplies} fell in replies under ${MIN_REPLY_CHARS} chars and were NOT kept` : ''));
+if (commitCollector) { const mk = commitCollector.markers(); console.log(`session commits: ${mk.filter((m) => m.state === 'landed').length} landed, ${mk.filter((m) => m.state === 'not-landed').length} did not, ${mk.filter((m) => m.state === 'unconfirmed').length} quiet (no SHA shown), across ${markerBuckets.size} exchange(s)`); }
 console.log(`commits    : ${totalAttached} attached across ${commitBuckets.size} exchange(s)`
   + (configuredRepos().length ? ` from ${configuredRepos().length} repo(s)` : '  (MEMORY_GIT_REPOS unset -- join disabled)'));
 if (out.length) {

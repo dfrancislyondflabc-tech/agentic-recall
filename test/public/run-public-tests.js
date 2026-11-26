@@ -1575,8 +1575,9 @@ group('the store is truth — a file the index has not read yet is served, and t
 // MEM-113 — A STAGING SEARCH NEVER READS A WHOLE TRANSCRIPT. The scheduled-task check read every recent transcript
 // whole (up to 1.2 GB) to look at 64 KB: one real search 1,410 -> 5,134 MB, held at 4.2 GB. Budget: ~5 s.
 {
-  const { readHeadMemoryTests } = await import('./read-head-memory.mjs');
+  const { readHeadMemoryTests, afterQueryGcTests } = await import('./read-head-memory.mjs');
   await readHeadMemoryTests({ check, group });
+  await afterQueryGcTests({ check, group });   // MEM-119
 }
 
 // =============================================================================================
@@ -1585,6 +1586,15 @@ group('the store is truth — a file the index has not read yet is served, and t
 {
   const { vectorCacheBinaryTests } = await import('./vector-cache-binary.mjs');
   await vectorCacheBinaryTests({ check, group });
+}
+
+// =============================================================================================
+// MEM-117 — COMMITS DURING A CONVERSATION WINDOW, MATCHED BY FILE. `thread` listed what landed by time alone; each commit
+// now carries its changed files and whether the window names one. Budget: ~3 s.
+{
+  const { commitMatchTests, commitMarkerTests } = await import('./commit-match.mjs');
+  await commitMatchTests({ check, group });
+  await commitMarkerTests({ check, group });   // MEM-118 — commits from the session's own tool calls
 }
 
 // =============================================================================================

@@ -75,3 +75,24 @@ export async function readHeadMemoryTests({ check, group }) {
     check('control: the old whole-file read of the same transcript grows the process > 300 MB', old.grewMB > 300, JSON.stringify(old));
   } finally { cleanupSandbox(dir, { label: 'mem113' }); }
 }
+
+// MEM-119 — AFTER A QUERY, THE GARBAGE IS COLLECTED (debounced, off the request path). 10 scope:'all' searches on the
+// author's corpus: heap 700 -> 1,333 MB without, ~700 MB with; footprint 1,784 vs 1,577 MB and still climbing without.
+export async function afterQueryGcTests({ check, group }) {
+  group('MEM-119 — garbage from a burst of queries is collected after it (debounced; never on the request path)');
+  const probe = (env) => {
+    const code = `const S = await import(${JSON.stringify(join(ROOT, 'lib', 'search.js'))});
+      let junk = []; for (let i = 0; i < 40; i++) junk.push(new Array(500000).fill(0).map((_, k) => ({ k })));   // ~200+ MB of objects
+      junk = null;
+      const t0 = Date.now(); S.scheduleAfterQueryGc(); const returnedMs = Date.now() - t0;
+      await new Promise((r) => setTimeout(r, 2500));
+      console.log(JSON.stringify({ returnedMs, state: S.afterQueryGcState() }));`;
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', timeout: 120000, env: { ...process.env, MEMORY_LOG_LEVEL: 'warn', ...env } });
+    try { return JSON.parse((r.stdout || '').trim().split('\n').pop()); } catch (_) { return { error: (r.stderr || '').slice(-300) }; }
+  };
+  const on = probe({});
+  check('scheduling returns at once (the collection is never on the request path)', on.returnedMs !== undefined && on.returnedMs < 50, JSON.stringify(on));
+  check('...and ~1.5 s later the grown heap is collected', on.state && on.state.ran === true && on.state.heapAfterMB < on.state.heapBeforeMB - 100, JSON.stringify(on));
+  const off = probe({ MEMORY_AFTER_QUERY_GC: '0' });
+  check('MEMORY_AFTER_QUERY_GC=0 turns it off (control: nothing runs)', off.state === null, JSON.stringify(off));
+}
