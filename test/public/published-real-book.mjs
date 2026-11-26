@@ -42,14 +42,23 @@ const entry = join(proj, 'node_modules', 'agentic-recall', 'index.js');
 ok(`installed ${SPEC} from the registry`);
 
 // ---- 2. a REAL book, with the messy bits --------------------------------------------------
-const URL = 'https://www.gutenberg.org/files/74/74-0.txt';   // Tom Sawyer: CRLF, front matter, licence trailer
+// Tom Sawyer: CRLF, front matter, licence trailer. The SAME file from Project Gutenberg's own mirror: www.gutenberg.org
+// has answered 503 since 2026-11-16, and this job then SKIPPED before its server handshake — so check:after-release could
+// not tell which release ran (2.2.0). The mirror serves the identical 405,783-byte 74-0.txt.
+const URLS = ['https://www.gutenberg.org/files/74/74-0.txt', 'https://gutenberg.pglaf.org/7/74/74-0.txt', 'https://aleph.pglaf.org/7/74/74-0.txt'];
 let book;
-try {
-  const res = await fetch(URL);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  book = await res.text();
-} catch (e) {
-  console.log(`  SKIP  could not download the book (${e.message}) — network-dependent test`);
+const why = [];
+for (const u of URLS) {
+  try {
+    const res = await fetch(u);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    book = await res.text();
+    if (book.length >= 100000) break;
+    why.push(`${u}: only ${book.length} chars`); book = undefined;
+  } catch (e) { why.push(`${u}: ${e.message}`); }
+}
+if (!book) {
+  console.log(`  SKIP  could not download the book from any mirror (${why.join('; ')}) — network-dependent test`);
   process.exit(0);
 }
 if (book.length < 100000) { bad(`book download too short (${book.length} chars)`); }
