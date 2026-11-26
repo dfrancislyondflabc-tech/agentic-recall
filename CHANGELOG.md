@@ -13,6 +13,23 @@ be checkable.
 ## [Unreleased]
 
 ### Fixed
+- **A search of the conversation index no longer holds 4 GB (MEM-113).** Every staging search asks which conversations
+  are not yet captured, and that check decided "is this a scheduled task?" by reading each recent transcript WHOLE to look
+  at its first 64 KB. Claude Code transcripts on the author's Mac reach 1.2 GB. Measured on that machine, one search:
+  **1,410 → 5,134 MB**, and the server sat at **4,237 MB** afterwards. Now only the head is read (identical decision):
+  peak 1,639 MB, settles 1,416 MB. Test: `test/public/read-head-memory.mjs`.
+- **Capture reads a transcript a line at a time, and no longer loses the end of very long sessions (MEM-114).** The
+  extractor read each transcript whole, twice: **2,870 MB** for one 460 MB transcript, now **244 MB** (6 real transcripts,
+  1,596 store files byte-identical old vs new). Transcripts past V8's 536,870,888-character string limit THREW on read,
+  so two sessions (752 MB, 1.2 GB) had been captured only up to ~535 MB; on the author's machine **839 exchanges** were
+  missing and are now captured.
+- **The vector cache is one binary file, written only when something was added (MEM-116).** `.vector-cache.json` (190 MB
+  of base64 on the author's machine) was parsed on every index build and rewritten whole at the end, even when nothing
+  was embedded. Now `.vector-cache.bin`; a no-change conversation-index rebuild **2,373 → 1,953 MB** (**1,227 MB** with
+  format 3 below). The JSON is read once to migrate and never written again (an older install keeps using its own copy).
+- **Embedding never swells memory (MEM-111).** Passages are embedded in memory-bounded passes, sorted by length, order
+  restored; indexing waits while macOS memory pressure is not normal (queries never wait). 240 long chunks: 1,279 → 345 MB.
+
 - **A curated index more than 8 files behind is now rebuilt in the background instead of being refused forever
   (MEM-110).** On the author's machine the curated index was last built 2026-09-28 and **166 memory files** had changed
   since: the capture job rebuilds the conversation index only, `memory_write` reindexes but memories are usually saved
@@ -23,6 +40,14 @@ be checkable.
   sections come from the vector cache. Never started while the embedding model is unavailable (that build would be
   keyword-only, worse than the stale index). Kill switch: `MEMORY_STALE_BACKGROUND_REBUILD=0` restores the refusal.
   Test: `test/public/stale-background-rebuild.mjs` (fails on 2.1.5: still stale after 120 s).
+
+### Added
+- **Index format 3: the vectors in one binary sidecar (MEM-115).** `<index>.<stamp>.f32` beside the index; the JSON
+  holds slot numbers. The author's conversation index: 156 MB → 57 MB JSON + 74 MB vectors; a search settles
+  **1,348 → 1,013 MB**, results identical (6 real queries × 8 results, same scores). A missing or short sidecar reads as a
+  corrupt index and is rebuilt — never as an index without vectors. **Read by this release; WRITTEN only with
+  `MEMORY_VEC_SIDECAR=1` or local-config `"vecSidecar": true`**, because a server from an earlier release refuses format
+  3 (it serves keyword-only for that index). Switch it on once every server that reads your index runs this release.
 
 ## [2.1.5] — 2026-10-07
 
