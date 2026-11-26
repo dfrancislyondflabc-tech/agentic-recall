@@ -215,13 +215,20 @@ try {
 // generated "book" shares the author's assumptions about what a book looks like -- real ones have
 // front matter, inconsistent chapter headings, hard-wrapped lines and a licence trailer.
 if (process.env.MEMORY_E2E_REAL_BOOK === '1') {
-  const URL_ = 'https://www.gutenberg.org/cache/epub/74/pg74.txt';   // Tom Sawyer, public domain
-  let book = '';
-  try {
-    const res = await fetch(URL_, { redirect: 'follow' });
-    if (res.ok) book = await res.text();
-  } catch (e) { console.log('  (book download failed: ' + e.message + ')'); }
-  check('the public-domain book downloaded', book.length > 100000, book.length + ' bytes');
+  // Tom Sawyer, public domain. SAME FILE from Project Gutenberg's own mirrors: since 2026-11-16 www.gutenberg.org answers
+  // CI runners (and, measured 2026-11-25, a home Mac) with 503 / 0 bytes, while gutenberg.pglaf.org and aleph.pglaf.org
+  // serve the identical 434,357-byte text. Tried in order; the check still fails if NONE of them delivers the book.
+  const URLS = ['https://www.gutenberg.org/cache/epub/74/pg74.txt', 'https://gutenberg.pglaf.org/cache/epub/74/pg74.txt',
+                'https://aleph.pglaf.org/cache/epub/74/pg74.txt'];
+  let book = '', from = '';
+  for (const u of URLS) {
+    try {
+      const res = await fetch(u, { redirect: 'follow' });
+      if (res.ok) { const t = await res.text(); if (t.length > 100000) { book = t; from = u; break; } }
+      console.log('  (book download from ' + u + ': HTTP ' + res.status + ')');
+    } catch (e) { console.log('  (book download from ' + u + ' failed: ' + e.message + ')'); }
+  }
+  check('the public-domain book downloaded', book.length > 100000, book.length + ' bytes' + (from ? ' from ' + from : ' — every mirror failed'));
   if (book.length > 100000) {
     const bdir = join(dir, 'realbook'); mkdirSync(bdir, { recursive: true });
     writeFileSync(join(bdir, 'tom-sawyer.txt'), book);
