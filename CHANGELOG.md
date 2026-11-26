@@ -13,6 +13,10 @@ be checkable.
 ## [2.2.0] — 2026-11-25
 
 ### Fixed
+- **The shared embedding helper is never started twice.** A client that found the helper slow to answer its health
+  check (busy with a long batch, or the Mac under memory pressure) judged it dead and started another — on the author's
+  Mac that became 7 helpers (~300 MB each, a new one every ~35 s) during a re-index. A live process that is slow is now
+  BUSY; only a dead process or a refused connection starts a helper, and a helper that finds another one running exits.
 - **A search of the conversation index no longer holds 4 GB (MEM-113).** Every staging search asks which conversations
   are not yet captured, and that check decided "is this a scheduled task?" by reading each recent transcript WHOLE to look
   at its first 64 KB. Claude Code transcripts on the author's Mac reach 1.2 GB. Measured on that machine, one search:

@@ -47,6 +47,21 @@ export async function embedderSwitchTests({ check, group }) {
   const u = probe({ MEMORY_EMBEDDER: 'no-such-model' }, CFG);
   check('an unknown embedder name falls back to bge-small', u.embedder === 'bge-small', JSON.stringify(u));
 
+  // EB-475: a BUSY helper (alive, slow to answer /health) is never judged dead — that misjudgement started a new helper
+  // every ~35 s (7 at once, ~300 MB each). A dead pid, or a port nobody listens on, still is.
+  {
+    const http = await import('node:http');
+    const C = await import(pathToFileURL(join(ROOT, 'lib', 'embed-helper-client.js')).href);
+    const slow = http.createServer((req, res) => setTimeout(() => res.end('{"ok":true}'), 4500));
+    await new Promise((r) => slow.listen(0, '127.0.0.1', r));
+    const busy = await C._aliveForTest({ pid: process.pid, port: slow.address().port, token: 't' });
+    const port = slow.address().port;
+    slow.close();
+    const refused = await C._aliveForTest({ pid: process.pid, port, token: 't' });
+    const deadPid = await C._aliveForTest({ pid: 999999, port, token: 't' });
+    check('a LIVE helper that is slow to answer counts as busy, not dead (no second helper); a dead pid or a closed port does not',
+      busy === true && refused === false && deadPid === false, JSON.stringify({ busy, refused, deadPid }));
+  }
   const installed = existsSync(join(homedir(), 'Library', 'Application Support', 'EmbedHelper', 'node_modules', 'node-llama-cpp'));
   if (!installed) { check('helper checks skipped: the shared embedding helper is not installed on this machine', true); return; }
   const e = probe({ MEMORY_EMBEDDER: 'harrier' }, `const E = await import(${JSON.stringify(pathToFileURL(join(ROOT, 'lib', 'embed.js')).href)});
