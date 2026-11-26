@@ -42,6 +42,20 @@ be checkable.
   Test: `test/public/stale-background-rebuild.mjs` (fails on 2.1.5: still stale after 120 s).
 
 ### Added
+- **Standing rules come back beside the results when the work touches their area (MEM-120, the rules lane).** A memory
+  declares `metadata.appliesTo: "public/, *.html, served file"` (folders, globs, file names, or topic words); a `search`
+  whose query or new `touching` paths fall in that area returns it under `rules` — outside the ranking, never instead of
+  a result (ranked rows are byte-identical with the lane on and off). At most 5. `MEMORY_RULES_LANE=0` turns it off.
+- **`thread` matches each commit to the conversation by file (MEM-117).** `commitsDuringWindow` rows now carry the files
+  each commit changed and `match`: `touches-discussed-files` (with `discussedFiles`), `other-files`,
+  `no-files-named-here` or `unknown`; `commitMatch` summarises. Evidence, not proof — and labelled so.
+- **Capture records the commits a session ran itself (MEM-118).** From its own tool calls, decided from git's OUTPUT:
+  `sessionCommits` (SHAs that landed), `commitAttemptsFailed`, `commitRunsUnconfirmed` (a quiet `commit -q` prints no SHA —
+  on the author's machine 676 of 784 commit runs). Only a short SHA and a folder name are stored, never command or
+  commit text; a session that ran no commit is captured byte-identically. `MEMORY_CAPTURE_COMMIT_MARKERS=0` turns it off.
+- **Memory is collected after a burst of queries (MEM-119).** 1.5 s after a query, off the request path, at most every
+  10 s, when the heap grew 128 MB: 10 broad searches kept the heap at ~700 MB instead of 1,333 MB and still climbing.
+  `MEMORY_AFTER_QUERY_GC=0` turns it off.
 - **Index format 3: the vectors in one binary sidecar (MEM-115).** `<index>.<stamp>.f32` beside the index; the JSON
   holds slot numbers. The author's conversation index: 156 MB → 57 MB JSON + 74 MB vectors; a search settles
   **1,348 → 1,013 MB**, results identical (6 real queries × 8 results, same scores). A missing or short sidecar reads as a

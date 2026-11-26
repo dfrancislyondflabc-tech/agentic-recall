@@ -118,7 +118,7 @@ function routeScope(query) {
   return { scope: 'curated', why: 'default' };
 }
 
-async function doSearch({ query, limit, scope, sessionId, after, before, near, account, project, maxChars, brief, queries, expand }) {
+async function doSearch({ query, limit, scope, sessionId, after, before, near, account, project, maxChars, brief, queries, expand, touching }) {
   if (!query || !query.trim()) throw new Error('search requires a non-empty `query`');
   const routed = scope ? { scope: validateScope(scope), why: 'caller-specified' } : routeScope(query);
   const res = await search(query, {
@@ -135,6 +135,7 @@ async function doSearch({ query, limit, scope, sessionId, after, before, near, a
     maxChars: maxChars ?? undefined,
     // MEM-86c. Trims the ROWS; every envelope-level honesty field survives (lib/search.js briefRows).
     brief: brief === true,
+    touching: Array.isArray(touching) ? touching : (touching ? [touching] : []),   // MEM-120 rules lane
     after: after ?? null, before: before ?? null, near: near ?? null
   });
 
@@ -1359,7 +1360,8 @@ const MEMORY_ARGS = {
   account: z.union([z.string(), z.array(z.string())]).optional().describe("search: restrict to memories written by an account. 'mine' means this surface's own MEMORY_ACCOUNT. Pass an array to read across several. Memories with no account label are ALWAYS returned, so nothing written before labelling existed disappears."),
   after: z.string().optional().describe('search: HARD lower bound on a memory\'s date (ISO). Excludes — use only when you mean exclusion.'),
   before: z.string().optional().describe('search: HARD upper bound on a memory\'s date (ISO). Excludes.'),
-  near: z.string().optional().describe('search: SOFT time anchor (ISO). Tilts ranking toward that period without hiding anything outside it.')
+  near: z.string().optional().describe('search: SOFT time anchor (ISO). Tilts ranking toward that period without hiding anything outside it.'),
+  touching: z.union([z.string().max(500), z.array(z.string().max(500)).max(20)]).optional().describe("search: the files or folders you are about to work on (e.g. ['lib/search.js','public/']). Standing rules that declare one of these areas in their `appliesTo` come back under `rules`, beside the results and never instead of them. File names in the query itself are used too.")
 };
 
 // ---------- unknown arguments on a WRITE ----------

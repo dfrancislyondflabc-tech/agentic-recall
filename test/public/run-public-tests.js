@@ -1598,6 +1598,14 @@ group('the store is truth — a file the index has not read yet is served, and t
 }
 
 // =============================================================================================
+// MEM-120 — THE RULES LANE. Memories that declare `appliesTo` come back under `rules` when the query or `touching`
+// paths fall in their area — outside the ranking. Budget: ~10 s.
+{
+  const { rulesLaneTests } = await import('./rules-lane.mjs');
+  await rulesLaneTests({ check, group });
+}
+
+// =============================================================================================
 // MEM-115 — THE VECTORS IN ONE BINARY SIDECAR (index format 3). The base64 vectors were 64% of the real 156 MB staging
 // index and existed twice while it was parsed: 1,074 MB to load; as 57 MB JSON + 74 MB .f32, 336 MB. Read always, written
 // only when switched on (MEMORY_VEC_SIDECAR=1), because a server from before this release refuses format 3.
