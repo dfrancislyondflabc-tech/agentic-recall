@@ -1678,6 +1678,15 @@ group('MEM-115 — vectors in one binary sidecar (format 3): same vectors, same 
 }
 
 // =============================================================================================
+// MEM-112 — THE EMBEDDER IS A SETTING. bge-small stays the default; MEMORY_EMBEDDER=harrier runs Harrier-OSS-v1 0.6B
+// in the ONE shared embedding helper, scales the absence scoreFloor by the measured ratio, refuses a bge index by name.
+// Budget: ~10 s (+ a few s when the helper is installed).
+{
+  const { embedderSwitchTests } = await import('./embedder-switch.mjs');
+  await embedderSwitchTests({ check, group });
+}
+
+// =============================================================================================
 // MEM-67 — THE LAST EXCHANGE OF A HOOK-LESS INSTALL. The sibling of the check above, and the one
 // the Windows PC test of 1.7.1 asked for: the timer used to defer the in-flight exchange on every
 // tick, so the newest thing in a chat reached the store only when the hourly audit healed it (~14
