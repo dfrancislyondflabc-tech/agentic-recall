@@ -47,6 +47,10 @@ store/
 # the corpus, and it mirrors chunk text. Never to a remote.
 .vector-cache.json
 *.vector-cache.json
+.vector-cache.bin
+*.vector-cache.bin
+# index format 3 vector sidecars (MEM-115)
+*.f32
 
 # The library-category indexes (lib/config.js libraryIndexPath): one per
 # category, same reason as every other index — they mirror the text of imported
